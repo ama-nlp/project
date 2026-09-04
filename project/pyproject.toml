@@ -20,9 +20,16 @@ project = "project.cli:main"
 # No vLLM: it is not available on Ada, so transformers is the production path.
 # accelerate provides device_map="auto" sharding across the 11 GB cards.
 gpu = [
-    "torch>=2.6,<=2.8",
-    "transformers>=4.51",
-    "accelerate>=1.0",
+    # torch 2.6.0 is the LAST release with manylinux1 x86_64 wheels (glibc 2.5).
+    # 2.7.0 moved to manylinux_2_28, needing glibc 2.28. Ada cannot use those:
+    # the login node is CentOS 7 (glibc 2.17) and the compute nodes are Ubuntu
+    # 18.04 (glibc 2.27). Do not bump this without checking `ldd --version`.
+    "torch>=2.6,<2.7",
+    # transformers 5.x renamed from_pretrained's `torch_dtype` to `dtype`,
+    # which is what backends.py passes. It needs only torch>=2.5, so it does
+    # not drag torch forward.
+    "transformers>=5.0,<6",
+    "accelerate>=1.1",
     "huggingface-hub[hf-transfer]>=0.26",
 ]
 dev = [

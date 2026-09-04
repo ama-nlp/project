@@ -59,6 +59,18 @@ if [ "${CAP%%.*}" -lt 7 ]; then
     echo "WARNING: compute_cap $CAP (GTX 1080 Ti) - usable, but fp16 is slow here."
 fi
 
+# torch 2.6.0 bundles CUDA 12.4. Via CUDA minor-version compatibility that needs
+# driver >= 525; older drivers fail deep inside torch with an opaque
+# "CUDA driver version is insufficient" instead of anything actionable.
+DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+echo "driver version: $DRV"
+if [ "${DRV%%.*}" -lt 525 ]; then
+    echo "FATAL: driver $DRV is too old for the CUDA 12.4 runtime in torch 2.6."
+    echo "Reinstall torch built against CUDA 11.8:"
+    echo "  uv pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu118"
+    exit 1
+fi
+
 uv run --group gpu project generate \
     --backend hf \
     --model Qwen/Qwen3-0.6B \
