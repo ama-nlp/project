@@ -32,7 +32,31 @@ bash "$REPO_DIR/scripts/fetch_upstream.sh"
 # --- 2. Python environment -------------------------------------------------
 export UV_PYTHON_PREFERENCE=managed
 export UV_PYTHON_DOWNLOADS=automatic
+
+# The login node is shared and memory-capped: unthrottled, uv aborts with
+# "memory allocation of N bytes failed" while unpacking torch's ~800 MB wheel
+# and the nvidia-* libraries alongside it. Serialising keeps peak memory low.
+# Running this under SLURM instead (slurm/setup.sbatch) avoids the cap entirely.
+export UV_CONCURRENT_DOWNLOADS="${UV_CONCURRENT_DOWNLOADS:-2}"
+export UV_CONCURRENT_INSTALLS="${UV_CONCURRENT_INSTALLS:-1}"
+export UV_CONCURRENT_BUILDS="${UV_CONCURRENT_BUILDS:-1}"
+
+# Keep the wheel cache off the 30 GB home quota when we have node-local disk.
+# venv (~6 GB) + models (~18 GB) already comes to ~24 GB; a ~4 GB cache on top
+# would overflow. On a compute node the cache is scratch and disposable.
+if [ -n "${SLURM_JOB_ID:-}" ] && [ -d /scratch ]; then
+    export UV_CACHE_DIR="${UV_CACHE_DIR:-/scratch/$USER/uv-cache}"
+    mkdir -p "$UV_CACHE_DIR"
+    echo "uv cache -> $UV_CACHE_DIR (node-local, off quota)"
+fi
+
 uv sync --group gpu --group dev
+
+# On the login node the cache does land in $HOME; reclaim it before the model
+# download needs the space.
+if [ -z "${UV_CACHE_DIR:-}" ]; then
+    uv cache prune >/dev/null 2>&1 || true
+fi
 
 # --- 3. Model weights ------------------------------------------------------
 # Qwen3-8B fp16 (~16 GB) fits the 30 GB home quota alongside the venv.

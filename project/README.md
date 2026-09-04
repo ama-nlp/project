@@ -28,10 +28,14 @@ Prefix commands with `UV_PYTHON_PREFERENCE=managed` or unset it.
 ## On Ada
 
 ```bash
-bash scripts/setup_ada.sh          # login node only: needs network
+bash scripts/fetch_upstream.sh     # login node: three files, a few MB
+sbatch slurm/setup.sbatch          # deps + weights on a compute node
 sbatch slurm/smoke.sbatch          # Qwen3-0.6B, 8 problems, ~minutes
-sbatch slurm/generate.sbatch C 0   # Qwen3-14B, full set, one arm
+sbatch slurm/generate.sbatch C 0   # Qwen3-8B, full set, one arm
 ```
+
+`setup` runs under SLURM rather than on the login node: the login node is
+memory-capped and `uv sync` aborts there while unpacking torch.
 
 ## Layout
 

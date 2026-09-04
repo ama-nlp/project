@@ -205,8 +205,15 @@ on compute nodes.
 the environment and weights must both exist first:
 
 ```bash
-bash scripts/setup_ada.sh    # pulls Qwen3-0.6B + Qwen3-8B into $HOME/hf (~18 GB)
+bash scripts/fetch_upstream.sh   # login node, a few MB
+sbatch slurm/setup.sbatch        # deps + ~18 GB of weights, on a compute node
+tail -f logs/setup-<JOBID>.out
 ```
+
+Setup runs as a batch job, not on the login node. The login node is shared and
+memory-capped, and `uv sync` aborts there with "memory allocation of N bytes
+failed" while unpacking torch's ~800 MB wheel. It asks for no GPU — `u22-cpu`
+exists for this — so it costs nothing against the 4-GPU QoS budget.
 
 **3. Smoke run.** `sbatch slurm/smoke.sbatch` — Qwen3-0.6B, 8 problems, minutes.
 Proves transformers loads the model in fp16, the chat template emits `<think>`, the
