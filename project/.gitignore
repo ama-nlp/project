@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+runs/
+logs/
+.env
+
+# Fetched from ariahw/rl-rewardhacking, which ships no LICENSE. We have no
+# right to redistribute it, so it is pulled at setup time by
+# scripts/fetch_upstream.sh rather than committed here.
+src/project/vendor/helpers.py
+src/project/vendor/evaluator.py
+data/leetcode_test_medhard.jsonl

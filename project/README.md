@@ -1,0 +1,47 @@
+# project
+
+Code for *Big Brother is (Maybe) Watching*. Inference-only: no fine-tuning, no
+RL. See `../docs/phase0.md` for the current phase and `../docs/phases.md` for
+the plan.
+
+## First run, anywhere
+
+`data/` and `src/project/vendor/` are **not in git** — they come from
+`ariahw/rl-rewardhacking`, which ships no LICENSE, so we fetch rather than
+redistribute. Nothing works until you run this once:
+
+```bash
+bash scripts/fetch_upstream.sh
+```
+
+## Quick start (no GPU)
+
+```bash
+uv run --group dev pytest          # 14 tests, runs the sandbox for real
+uv run project generate --backend mock --n 6   # mock = no model at all
+```
+
+If uv says *"No interpreter found for Python 3.12"*, your shell exports
+`UV_PYTHON_PREFERENCE=only-system`, which overrides the project setting.
+Prefix commands with `UV_PYTHON_PREFERENCE=managed` or unset it.
+
+## On Ada
+
+```bash
+bash scripts/setup_ada.sh          # login node only: needs network
+sbatch slurm/smoke.sbatch          # Qwen3-0.6B, 8 problems, ~minutes
+sbatch slurm/generate.sbatch C 0   # Qwen3-14B, full set, one arm
+```
+
+## Layout
+
+| path | what |
+|---|---|
+| `data/` | frozen problem set (fetched, gitignored), sha256 in every trace |
+| `src/project/schema.py` | the trace record — every phase reads this |
+| `src/project/data.py` | problem loading + the `run_tests()` loophole |
+| `src/project/prompts.py` | arm system prompts (P4 replaces with the real bank) |
+| `src/project/parsing.py` | CoT / program splitting |
+| `src/project/rh_eval.py` | four-run reward-hack labelling |
+| `src/project/backends.py` | mock / hf (transformers; vLLM unavailable on Ada) |
+| `src/project/vendor/` | sandbox (fetched, gitignored) from ariahw/rl-rewardhacking |
