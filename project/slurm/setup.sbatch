@@ -9,12 +9,22 @@
 # node has 125 GB of RAM, reaches the internet (verified HTTP 200), and sees
 # the same $HOME, so everything it installs is there for later jobs.
 #
-# No GPU is requested: this only downloads and unpacks. u22-cpu exists exactly
-# for this, so it does not burn a GPU allocation or your 4-GPU QoS budget.
+# This uses the same account/qos/partition combination the probe already ran
+# successfully (research / medium / u22). It asks for a GPU it does not need,
+# purely because that combination is known to be accepted.
+#
+# The tidier option is the CPU-only partition, which would leave your 4-GPU
+# QoS budget untouched -- but `--partition=u22-cpu` was rejected with "Invalid
+# account or account/partition combination". Find out what it does allow:
+#
+#   scontrol show partition u22-cpu | tr ' ' '\n' | grep -iE 'allow|deny|qos'
+#
+# then swap the three lines below for that partition and drop --gres.
 #SBATCH --job-name=project-setup
 #SBATCH --account=research
 #SBATCH --qos=medium
-#SBATCH --partition=u22-cpu
+#SBATCH --partition=u22
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=24G
 #SBATCH --time=03:00:00
