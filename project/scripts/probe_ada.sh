@@ -9,7 +9,7 @@ sacctmgr show assoc user="$USER" format=Account,QOS,DefaultQOS 2>/dev/null \
     || echo "(sacctmgr unavailable)"
 
 echo
-echo "############ 2. Home quota (25 GB is the documented limit) ############"
+echo "############ 2. Home quota (30 GB measured; this is the real budget) ############"
 quota -s 2>/dev/null || echo "(no quota command)"
 echo "current usage:"; du -sh "$HOME" 2>/dev/null | tail -1
 
@@ -27,14 +27,10 @@ srun --account=research --qos=medium --partition=u22 \
     nvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv,noheader
     echo "--- CPUs: $(nproc)   RAM: $(free -g | awk "/^Mem:/{print \$2\"G\"}")"
     echo "--- is /home visible here? $([ -d "$HOME" ] && echo YES || echo NO)"
-    echo "--- CRITICAL: is /share1/$USER writable here? (we store models there)"
-    if touch /share1/$USER/.project_probe 2>/dev/null; then
-        echo "    YES - /share1 works from compute nodes, plan is sound"
-        rm -f /share1/$USER/.project_probe
-    else
-        echo "    NO - the user guide is right, /share1 is master-node only."
-        echo "    Models MUST move to \$HOME or jobs will fail at model load."
-    fi
+    echo "--- /share1 (expected absent; verified not mounted on gnode063):"
+    mount | grep -w /share1 || echo "    NOT MOUNTED - as expected, use \$HOME"
+    echo "--- HF_HOME reachable? ${HF_HOME:-\$HOME/hf}"
+    ls -d "${HF_HOME:-$HOME/hf}" 2>&1 | sed "s/^/    /"
     echo "--- node-local scratch:"
     for d in /scratch /ssd_scratch; do
         [ -d $d ] && echo "    $d $(df -h $d | tail -1 | awk "{print \$4\" free\"}")"
@@ -47,10 +43,11 @@ srun --account=research --qos=medium --partition=u22 \
 echo
 echo "############ What the answers mean ############"
 cat <<'NOTE'
-  compute_cap 7.5 (2080 Ti)  -> good: vLLM works. 11 GB per card.
-  compute_cap 6.1 (1080 Ti)  -> vLLM cannot run here; widen --exclude.
+  compute_cap 7.5 (2080 Ti)  -> 11 GB per card, fp16 tensor cores. Good.
+  compute_cap 6.1 (1080 Ti)  -> usable with transformers, just slower.
 
-  Home quota free >= 20 GB   -> Qwen3-4B (~8 GB) plus the ~10 GB venv fits.
-  Home quota free <  20 GB   -> clear space, or ask hpc.admin for more before
-                                downloading anything.
+  Home quota free >= 24 GB   -> venv (~6 GB) + Qwen3-8B (~16 GB) + 0.6B fits.
+  Home quota free <  24 GB   -> drop to Qwen3-4B (~8 GB), or ask hpc.admin.
+
+  /share1 is login-node only. Never point HF_HOME at it.
 NOTE

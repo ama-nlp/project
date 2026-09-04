@@ -24,7 +24,7 @@ Everything else in P0 is scaffolding for those three.
 | Model | **Qwen3-8B, fp16, TP=2** as the working default; Qwen3-0.6B for smoke; 4B as fallback |
 | Serving | **`transformers` only — vLLM is unavailable on Ada.** Batched generation with left padding |
 | Deps | `uv`, Python 3.12 pinned (system 3.14 has no torch wheels) |
-| Storage | Models `/share1/$USER/models`, datasets `/share1/$USER/datasets` (100 GB quota). Code + venv on `/home` (30 GB) |
+| Storage | Everything under `$HOME` (30 GB): `HF_HOME=$HOME/hf`, repo, venv. **`/share1` is login-node only** |
 | Problem set | 119 medium/hard LeetCode problems, vendored, sha256 `5bb4d91f…7185cbd` |
 | Loophole | `simple_overwrite_tests` — the model is told it will be graded by `run_tests()` |
 
@@ -57,10 +57,16 @@ name specified". The sbatch files warn on compute capability instead.
 | Qwen3-8B | ~16 GB | 2 | two arms in parallel |
 | Qwen3-14B | ~28 GB | 4 | one arm at a time, a whole node, nothing in reserve |
 
-Neither GPUs nor disk is the blocker any more: 4 cards (44 GB) are available
-for real runs, and models live on `/share1` with a 100 GB quota, so even 14B
-(~28 GB) fits. What remains is **generation throughput**, and without vLLM that
-is the tightest constraint in the project.
+The 30 GB home quota is what bounds model size: the venv is ~6 GB without
+vLLM, so Qwen3-8B (~16 GB) fits comfortably and Qwen3-14B (~28 GB) does not.
+If P3 needs 14B there are two outs — ask `hpc.admin@iiit.ac.in` for a quota
+increase, or set `PROJECT_HF_SCRATCH=1` to pull weights to node-local
+`/ssd_scratch` (869 GB free) at job start, since **compute nodes do have
+internet** (verified HTTP 200). The scratch route re-downloads whenever a job
+lands on a new node and is purged after 7 days.
+
+Beyond that the binding constraint is **generation throughput**, and without
+vLLM that is the tightest thing in the project.
 
 `device_map="auto"` shards a model across GPUs pipeline-style, so the cards run
 *sequentially*: more GPUs buy capacity, not speed. Speed comes from
@@ -77,13 +83,11 @@ real budget.
 Start at Qwen3-8B and escalate only if the P3 pilot fails its gate. `phases.md` already sets that rule: *"Failing → escalate
 model scale, do not proceed."*
 
-> **One risk to confirm before relying on this.** The Ada user guide lists
-> `/share1` as *"Master node only"* visibility. If that is accurate, weights
-> staged there are invisible from `gnode*` and every job dies at model load
-> after queueing. `probe_ada.sh` now tests exactly this by touching a file on a
-> compute node, and both sbatch files fail fast with a clear message rather than
-> a confusing stack trace. If the probe says NO, move `HF_HOME` to `$HOME`
-> and drop back to 8B, which fits the 30 GB home quota.
+> **Resolved: `/share1` cannot hold anything a job needs.** Verified on
+> gnode063 — the path does not exist on compute nodes at all (`mount` shows it
+> unlisted; `mkdir /share1` gives permission denied). It is login-node storage
+> only, useful for archiving finished results off the home quota, nothing more.
+> `HF_HOME` is `$HOME/hf`.
 
 ### Why we did not fork `ariahw/rl-rewardhacking`
 
@@ -191,17 +195,17 @@ give you your quota or which card you land on.
 bash scripts/probe_ada.sh    # ~2 min, one GPU
 ```
 
-Already confirmed: account `research`, QoS `medium`, `/home` quota 30 GB with
-144 K used, and **no CUDA modules exist** (the `module load` lines are gone —
-transformers does not need them). Still unconfirmed, because the first `srun`
-failed on the bad `--exclude`: the actual GPU you land on, and whether compute
-nodes have internet. Re-run the probe now that it is fixed.
+**Done — all confirmed on gnode063:** RTX 2080 Ti, 11264 MiB, compute cap 7.5;
+10 CPUs and 125 GB RAM per allocation; `research` / QoS `medium`; `/home` 30 GB
+quota; no CUDA modules (transformers does not need them); `/scratch` 1.7 TB and
+`/ssd_scratch` 869 GB node-local; compute nodes have internet; `/share1` absent
+on compute nodes.
 
 **2. Run setup on the login node.** Compute nodes likely have no internet, so
 the environment and weights must both exist first:
 
 ```bash
-bash scripts/setup_ada.sh    # pulls Qwen3-0.6B + Qwen3-8B into /share1/$USER/models
+bash scripts/setup_ada.sh    # pulls Qwen3-0.6B + Qwen3-8B into $HOME/hf (~18 GB)
 ```
 
 **3. Smoke run.** `sbatch slurm/smoke.sbatch` — Qwen3-0.6B, 8 problems, minutes.

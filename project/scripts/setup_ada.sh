@@ -3,25 +3,25 @@
 #
 # Storage facts that drive this script (Ada user guide, "File Systems"):
 #   /home         30 GB quota, visible on login AND compute nodes.
-#   /share1       100 GB quota (confirmed). The user guide calls this
-#                 "master node only"; we store models and datasets here per
-#                 project convention. probe_ada.sh verifies visibility from
-#                 a compute node — check it before trusting this.
+#   /share1       100 GB, LOGIN NODE ONLY. Verified: on gnode063 the path does
+#                 not exist at all. Useless for anything a job needs at runtime.
+#                 Still fine for archiving finished results off the home quota.
 #   /scratch      2 TB, node-local, purged after 7 days.
 #   /ssd_scratch  960 GB, node-local, fast, purged after 7 days.
 #
-# Models   -> /share1/$USER/models   (HF_HOME)
-# Datasets -> /share1/$USER/datasets (PROJECT_DATA_DIR)
+# So everything a job touches lives under $HOME:
+#   models   -> $HOME/hf   (HF_HOME)
+#   datasets -> the repo's data/, fetched by fetch_upstream.sh (3.7 MB)
+# Budget: venv ~6 GB + Qwen3-8B fp16 ~16 GB + Qwen3-0.6B ~1.5 GB = ~24 GB of 30.
 set -euo pipefail
 
-export HF_HOME="${HF_HOME:-/share1/$USER/models}"
-export PROJECT_DATA_DIR="${PROJECT_DATA_DIR:-/share1/$USER/datasets}"
-mkdir -p "$HF_HOME" "$PROJECT_DATA_DIR"
+export HF_HOME="${HF_HOME:-$HOME/hf}"
+mkdir -p "$HF_HOME"
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
-echo "=== quotas: /home 30 GB (venv ~10 GB), /share1 100 GB (models) ==="
+echo "=== /home quota: 30 GB. venv ~6 GB + 8B ~16 GB + 0.6B ~1.5 GB = ~24 GB ==="
 quota -s 2>/dev/null || du -sh "$HOME" 2>/dev/null || true
 
 # --- 1. Upstream files -----------------------------------------------------
@@ -35,10 +35,11 @@ export UV_PYTHON_DOWNLOADS=automatic
 uv sync --group gpu --group dev
 
 # --- 3. Model weights ------------------------------------------------------
-# With models on /share1 (100 GB) rather than /home, size is no longer the
-# constraint: Qwen3-14B fp16 (~28 GB) fits comfortably. Start at 8B anyway and
-# escalate only if the P3 pilot needs it — bigger models cost queue time, not
-# just disk. Override with PROJECT_MODELS.
+# Qwen3-8B fp16 (~16 GB) fits the 30 GB home quota alongside the venv.
+# Qwen3-14B (~28 GB) does not. If P3 needs it, either ask hpc.admin for a quota
+# increase, or stage to node-local /ssd_scratch at job start — compute nodes do
+# have internet (verified HTTP 200), so a per-node download is possible.
+# Override with PROJECT_MODELS.
 MODELS="${PROJECT_MODELS:-Qwen/Qwen3-0.6B Qwen/Qwen3-8B}"
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
@@ -54,6 +55,4 @@ echo
 echo "=== disk used ==="
 du -sh "$HF_HOME" "$REPO_DIR/.venv" 2>/dev/null || true
 echo
-echo "Add to ~/.bashrc on Ada:"
-echo "  export HF_HOME=$HF_HOME"
-echo "  export PROJECT_DATA_DIR=$PROJECT_DATA_DIR"
+echo "Add to ~/.bashrc on Ada:  export HF_HOME=$HF_HOME"
