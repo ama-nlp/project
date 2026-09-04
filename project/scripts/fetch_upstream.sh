@@ -40,8 +40,11 @@ for entry in "${FILES[@]}"; do
     tmp="$(mktemp)"
     # Timeouts matter: a bare curl hangs forever on a stalled link, and the
     # failure then looks like setup_ada.sh simply never finishing.
+    # Only long-established flags here: Ada's curl is old (no
+    # --retry-connrefused, which needs 7.52+), just as its git is too old for
+    # partial clones. Assume nothing modern on this cluster.
     if ! curl -fsSL --connect-timeout 20 --max-time 600 \
-              --retry 3 --retry-delay 3 --retry-connrefused \
+              --retry 3 --retry-delay 3 \
               "$BASE/$src" -o "$tmp"; then
         rm -f "$tmp"
         echo "FATAL: download failed for $src"
