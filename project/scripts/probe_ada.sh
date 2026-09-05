@@ -28,7 +28,7 @@ srun --account=research --qos=medium --partition=u22 \
     echo "--- CPUs: $(nproc)   RAM: $(free -g | awk "/^Mem:/{print \$2\"G\"}")"
     echo "--- is /home visible here? $([ -d "$HOME" ] && echo YES || echo NO)"
     echo "--- /share1 (expected absent; verified not mounted on gnode063):"
-    mount | grep -w /share1 || echo "    NOT MOUNTED - as expected, use \$HOME"
+    mount | grep -w /share1 || echo "    NOT MOUNTED - as expected; stage from it by scp"
     echo "--- HF_HOME reachable? ${HF_HOME:-\$HOME/hf}"
     ls -d "${HF_HOME:-$HOME/hf}" 2>&1 | sed "s/^/    /"
     echo "--- node-local scratch:"
@@ -46,8 +46,13 @@ cat <<'NOTE'
   compute_cap 7.5 (2080 Ti)  -> 11 GB per card, fp16 tensor cores. Good.
   compute_cap 6.1 (1080 Ti)  -> usable with transformers, just slower.
 
-  Home quota free >= 24 GB   -> venv (~6 GB) + Qwen3-8B (~16 GB) + 0.6B fits.
-  Home quota free <  24 GB   -> drop to Qwen3-4B (~8 GB), or ask hpc.admin.
+  Home quota free >= 10 GB   -> fine; $HOME carries only code, venv (~6 GB)
+                               and runs/. Weights are NOT here.
+  Home quota free <  10 GB   -> prune the uv cache; if ~/hf still exists it is
+                               a leftover model cache, rm -rf it.
 
-  /share1 is login-node only. Never point HF_HOME at it.
+  /share1 is login-node only: never point HF_HOME at it. It is the master
+  weight store, scp'd to node-local /scratch at job start by
+  slurm/stage_model.sh. Check it is populated:
+    ls /share1/$USER/models
 NOTE

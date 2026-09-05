@@ -24,7 +24,7 @@ Everything else in P0 is scaffolding for those three.
 | Model | **Qwen3-8B, fp16, TP=2** as the working default; Qwen3-0.6B for smoke; 4B as fallback |
 | Serving | **`transformers` only — vLLM is unavailable on Ada.** Batched generation with left padding |
 | Deps | `uv`, Python 3.12 pinned (system 3.14 has no torch wheels) |
-| Storage | Everything under `$HOME` (30 GB): `HF_HOME=$HOME/hf`, repo, venv. **`/share1` is login-node only** |
+| Storage | `$HOME` (30 GB) holds code, venv and `runs/`. **All** weights live on `/share1` (100 GB, login node) and are staged to node-local `/scratch` at job start by `slurm/stage_model.sh` — see below |
 | Problem set | 119 medium/hard LeetCode problems, vendored, sha256 `5bb4d91f…7185cbd` |
 | Loophole | `simple_overwrite_tests` — the model is told it will be graded by `run_tests()` |
 
@@ -57,23 +57,33 @@ name specified". The sbatch files warn on compute capability instead.
 | Qwen3-8B | ~16 GB | 2 | two arms in parallel |
 | Qwen3-14B | ~28 GB | 4 | one arm at a time, a whole node, nothing in reserve |
 
-The 30 GB home quota is what bounds model size: the venv is ~6 GB without
-vLLM, so Qwen3-8B (~16 GB) fits comfortably and Qwen3-14B (~28 GB) does not.
-If P3 needs 14B there are two outs — ask `hpc.admin@iiit.ac.in` for a quota
-increase, or set `PROJECT_HF_SCRATCH=1` to pull weights to node-local
-`/ssd_scratch` (869 GB free) at job start, since **compute nodes do have
-internet** (verified HTTP 200). The scratch route re-downloads whenever a job
-lands on a new node and is purged after 7 days.
+**Disk is not what bounds model size.** `$HOME` holds only 30 GB, but weights
+do not have to live there — `/share1` has 100 GB and is staged to node-local
+scratch at job start (see the storage note below). Qwen3-14B's 28 GB fits that
+route without a quota increase.
+
+What bounds model size is **VRAM and the QoS budget**, per the table above.
+Because the cards run sequentially (below), a 14B run holds the whole 4-GPU
+allocation to produce roughly one card's throughput, while 4B runs four arms on
+four active cards. That parallelism swing is close to 4x — far larger than any
+disk consideration.
 
 Beyond that the binding constraint is **generation throughput**, and without
-vLLM that is the tightest thing in the project.
+vLLM that is the tightest thing in the project. The lever with the most
+leverage there is `max_tokens`, not model size: the KV cache is
+`micro_batch x context x bytes_per_token`, so halving the context roughly
+triples the batch that fits. Set it from the measured `n_completion_tokens`
+distribution (about p95), not from a round number.
 
 `device_map="auto"` shards a model across GPUs pipeline-style, so the cards run
 *sequentially*: more GPUs buy capacity, not speed. Speed comes from
 `micro_batch`, because decoding is memory-bandwidth bound — the weights are
 re-read once per step no matter how many sequences share it. Raise
-`PROJECT_MICRO_BATCH` until VRAM runs out; Qwen3-8B at 8k context costs roughly
-1.2 GB of KV cache per sequence, so 4–6 is the realistic ceiling on 2×11 GB.
+`PROJECT_MICRO_BATCH` until VRAM runs out. Qwen3-8B costs 0.141 MiB of KV cache
+per token per sequence, so the ceiling on 2×11 GB depends entirely on the
+context you allow: 3–4 at 8k, but only 1 at 16k. `HFBackend` computes this
+before generating and refuses a run that will not fit, rather than OOMing an
+hour in.
 
 **Time one arm before committing to P5.** 6 arms × 119 problems × 3 paraphrases
 is ~2,100 generations; at a few thousand tokens each that is plausibly 8+ hours
@@ -83,11 +93,37 @@ real budget.
 Start at Qwen3-8B and escalate only if the P3 pilot fails its gate. `phases.md` already sets that rule: *"Failing → escalate
 model scale, do not proceed."*
 
-> **Resolved: `/share1` cannot hold anything a job needs.** Verified on
-> gnode063 — the path does not exist on compute nodes at all (`mount` shows it
-> unlisted; `mkdir /share1` gives permission denied). It is login-node storage
-> only, useful for archiving finished results off the home quota, nothing more.
-> `HF_HOME` is `$HOME/hf`.
+> **Resolved: `/share1` is not mounted on compute nodes, but is still usable.**
+> Verified on gnode063 — the path does not exist there at all (`mount` shows it
+> unlisted; `mkdir /share1` gives permission denied).
+>
+> An earlier version of this doc concluded from that it "cannot hold anything a
+> job needs". That was wrong, and it is worth stating plainly because it drove
+> the model-size decision. Not mounted is not the same as not reachable: a job
+> can pull from the login node over the network at start-up, which is what our
+> other Ada work already does —
+>
+> ```bash
+> scp -r $USER@ada:/share1/$USER/models/<Name> /scratch/$USER/models/
+> ```
+>
+> and ships large outputs back the same way. So `/share1` (100 GB) is the home
+> for anything too big for the 30 GB `$HOME` quota, including 14B weights.
+>
+> The cost is a re-copy on every job start, since scratch is node-local and
+> purged, so the staged size is a throughput consideration, not a capacity one.
+> This applies to **every** model, not only the ones too big for `$HOME`.
+> Keeping the 8B in `$HOME/hf` would technically fit — 16 GB of weights plus a
+> 6 GB venv is ~23 GB of 30 — but it spends the quota on the one thing that has
+> somewhere else to live, and leaves almost nothing for the traces P5 writes.
+> `setup_ada.sh` therefore downloads to `/share1/$USER/models/<Name>` with
+> `--local-dir`, not into the HF cache: the cache's `blobs/`+`snapshots/`
+> symlink layout is dereferenced by `scp -r`, so staging a cached model copies
+> every shard twice.
+>
+> `PROJECT_MODEL_SHARE=0` falls back to resolving the repo id through `HF_HOME`;
+> compute nodes do have internet (verified HTTP 200) so that works, it just
+> pays the download again on every new node.
 
 ### Why we did not fork `ariahw/rl-rewardhacking`
 
@@ -197,9 +233,10 @@ bash scripts/probe_ada.sh    # ~2 min, one GPU
 
 **Done — all confirmed on gnode063:** RTX 2080 Ti, 11264 MiB, compute cap 7.5;
 10 CPUs and 125 GB RAM per allocation; `research` / QoS `medium`; `/home` 30 GB
-quota; no CUDA modules (transformers does not need them); `/scratch` 1.7 TB and
-`/ssd_scratch` 869 GB node-local; compute nodes have internet; `/share1` absent
-on compute nodes.
+quota; `/scratch` 1.7 TB and `/ssd_scratch` 869 GB node-local; compute nodes have internet; `/share1` absent
+on compute nodes. (`u22/cuda/12.4` does exist as a module — an earlier version
+of this doc said Ada had no CUDA modules, which is wrong. We still load nothing:
+torch ships its own CUDA runtime, and the smoke path works without it.)
 
 **2. Run setup on the login node.** Compute nodes likely have no internet, so
 the environment and weights must both exist first:
@@ -215,7 +252,7 @@ memory-capped, and `uv sync` aborts there with "memory allocation of N bytes
 failed" while unpacking torch's ~800 MB wheel. It asks for no GPU — `u22-cpu`
 exists for this — so it costs nothing against the 4-GPU QoS budget.
 
-**3. Smoke run.** `sbatch slurm/smoke.sbatch` — Qwen3-0.6B, 8 problems, minutes.
+**3. Smoke run.** `sbatch slurm/smoke.sbatch` — Qwen3-0.6B, 4 problems, minutes.
 Proves transformers loads the model in fp16, the chat template emits `<think>`, the
 sandbox survives SLURM's cgroups, and traces validate. Fix anything broken
 here, never on the larger model.
@@ -227,8 +264,14 @@ and a verdict.
 **5. Read twenty traces by hand.** Not optional, and not automatable. Check
 that `<think>` parsing didn't truncate, that `program` is the final block and
 not a draft, and that at least a few generations actually attempt the hack. If
-the base hack rate is zero at 4B, P3 is dead on arrival and you want to know
+the base hack rate is zero at 8B, P3 is dead on arrival and you want to know
 before spending a queue slot on anything larger.
+
+Smoke cannot answer this. Qwen3-0.6B is there to prove plumbing — that
+transformers loads, the chat template emits `<think>`, the sandbox survives the
+cgroup, and a record reaches disk in the right schema. It can pass while every
+generation is truncated nonsense, and its completion lengths do not predict an
+8B model's. The model-size question is settled by step 4, not step 3.
 
 ## Open items that P0 should settle
 

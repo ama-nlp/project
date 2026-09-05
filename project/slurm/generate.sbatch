@@ -48,22 +48,22 @@ ARM="${1:-C}"
 PARAPHRASE="${2:-0}"
 MODEL="${PROJECT_MODEL:-Qwen/Qwen3-8B}"
 
-# Storage, settled by scripts/probe_ada.sh on gnode063:
-#   /share1      NOT visible from compute nodes. Cannot hold weights.
-#   /home        30 GB quota, visible everywhere. Qwen3-8B fp16 (~16 GB) plus
-#                the venv (~6 GB without vLLM) fits with room to spare.
-#   /ssd_scratch 869 GB node-local, and compute nodes DO have internet, so a
-#                model too big for /home can be pulled straight to scratch at
-#                job start. Set PROJECT_HF_SCRATCH=1 for that; it re-downloads
-#                whenever the job lands on a new node.
+# Storage. Weights come from /share1, results go to $HOME -- see
+# slurm/stage_model.sh for why, and scripts/probe_ada.sh for the measurements.
+#   /share1/$USER/models   master weight store, 100 GB, login node only
+#   /scratch/$USER/models  node-local copy, staged by scp at job start
+#   $HOME                  30 GB: code, venv, and runs/ -- NOT weights
+# HF_HOME is only the fallback for PROJECT_MODEL_SHARE=0 (resolve the repo id
+# over the compute node's network instead of staging).
 if [ "${PROJECT_HF_SCRATCH:-0}" = "1" ]; then
     export HF_HOME="/ssd_scratch/$USER/hf"
     mkdir -p "$HF_HOME"
 else
     export HF_HOME="${HF_HOME:-$HOME/hf}"
 fi
-# Compute nodes have network access, so a cache miss downloads rather than
-# crashing. Pre-staging via setup_ada.sh just makes the first job faster.
+source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
+MODEL=$(stage_model "$MODEL") || exit 1
+echo "model: $MODEL"
 export UV_PYTHON_PREFERENCE=managed
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-10}"
 export TOKENIZERS_PARALLELISM=false

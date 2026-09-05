@@ -9,6 +9,9 @@
 # node has 125 GB of RAM, reaches the internet (verified HTTP 200), and sees
 # the same $HOME, so everything it installs is there for later jobs.
 #
+# This covers the VENV ONLY. Weights are a separate job:
+#   sbatch slurm/download_model.sbatch
+#
 # This uses the same account/qos/partition combination the probe already ran
 # successfully (research / medium / u22). It asks for a GPU it does not need,
 # purely because that combination is known to be accepted.
