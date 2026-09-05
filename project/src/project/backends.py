@@ -7,8 +7,10 @@ vLLM is not available on Ada, so `hf` (transformers) is the production path and
     generation is batched manually here. Decoding is memory-bandwidth bound:
     the weights are re-read once per step regardless of batch size, so a larger
     `micro_batch` is nearly free throughput until the KV cache exhausts VRAM.
-    Qwen3-8B at 8k context costs roughly 1.2 GB of KV cache per sequence, which
-    is what `micro_batch` has to respect.
+    Qwen3-8B costs 0.141 MiB of KV cache per token per sequence, so 16k
+    context is 2.3 GB per sequence -- which is what `micro_batch` has to
+    respect. `_preflight` computes this from the model config and refuses to
+    start a run that cannot fit.
   * P8 gets easier. Activation extraction needs `output_hidden_states=True`,
     which vLLM cannot provide. Now that the behavioural runs already go through
     transformers, P8 extends this backend instead of standing up a second path.
@@ -114,6 +116,60 @@ class HFBackend:
             model, dtype=getattr(torch, dtype), device_map="auto"
         )
         self.model.eval()
+        self._bytes_per_elem = torch.finfo(getattr(torch, dtype)).bits // 8
+        self._preflighted = False
+
+    def _kv_bytes_per_token(self) -> int:
+        """KV cache cost of one token of one sequence, across all layers."""
+        cfg = self.model.config
+        n_layers = cfg.num_hidden_layers
+        n_kv = getattr(cfg, "num_key_value_heads", None) or cfg.num_attention_heads
+        head_dim = getattr(cfg, "head_dim", None) or cfg.hidden_size // cfg.num_attention_heads
+        return 2 * n_layers * n_kv * head_dim * self._bytes_per_elem
+
+    def _preflight(self, prompt_len: int, max_new: int) -> None:
+        """Fail in a second with a number, not in twenty minutes with a traceback.
+
+        The KV cache is the whole story for memory here: it scales with
+        micro_batch x context, and a 0.6B model with a 16k budget at batch 4
+        needs 7.2 GiB of cache against 1.2 GiB of weights. Getting that wrong
+        used to surface as an OOM deep inside `repeat_kv` after the full
+        generation had already been paid for.
+        """
+        import torch
+
+        if self._preflighted or not torch.cuda.is_available():
+            return
+        self._preflighted = True
+
+        ctx = prompt_len + max_new
+        need = self._kv_bytes_per_token() * ctx * self.micro_batch
+
+        # device_map="auto" spreads layers, and the cache with them, so compare
+        # against the total free memory of the devices the model occupies.
+        devices = {
+            p.device.index
+            for p in self.model.parameters()
+            if p.device.type == "cuda" and p.device.index is not None
+        } or {torch.cuda.current_device()}
+        free = sum(torch.cuda.mem_get_info(i)[0] for i in sorted(devices))
+
+        gib = 1024**3
+        print(
+            f"  kv cache: {need / gib:.2f} GiB "
+            f"(micro_batch {self.micro_batch} x {ctx} tokens x "
+            f"{self._kv_bytes_per_token() / 1024:.3f} KiB/token), "
+            f"free across {len(devices)} gpu(s): {free / gib:.2f} GiB"
+        )
+        # Activations, the repeat_kv temporaries and allocator fragmentation all
+        # come out of the same pool, so require real slack rather than a bare fit.
+        if need > 0.8 * free:
+            raise SystemExit(
+                f"KV cache needs {need / gib:.2f} GiB but only {free / gib:.2f} GiB is free "
+                f"across {len(devices)} gpu(s).\n"
+                f"Lower --micro_batch (now {self.micro_batch}) or --max_tokens "
+                f"(now {max_new}); either scales the cache linearly."
+            )
 
     def _render(self, messages: list[dict]) -> str:
         return self.tokenizer.apply_chat_template(
@@ -142,6 +198,7 @@ class HFBackend:
                 max_length=self.max_model_len,
             ).to(self.model.device)
             prompt_len = enc["input_ids"].shape[1]
+            self._preflight(prompt_len, sampling.max_tokens)
 
             with torch.no_grad():
                 ids = self.model.generate(

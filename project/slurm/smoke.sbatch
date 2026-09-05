@@ -1,5 +1,5 @@
 #!/bin/bash
-# P0 gate on Ada, cheap version: Qwen3-0.6B over 4 problems.
+# P0 smoke on Ada, cheap version: Qwen3-0.6B over 4 problems.
 # Proves transformers loads the model, the chat template emits <think>, the
 # sandbox survives SLURM's cgroup limits, and traces validate. Minutes, one GPU.
 #
@@ -49,6 +49,10 @@ export UV_PYTHON_PREFERENCE=managed
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-10}"  # sandbox workers = allocated cores
 export PROJECT_RUNS_DIR="${PROJECT_RUNS_DIR:-runs}"
 export TOKENIZERS_PARALLELISM=false
+# DynamicCache grows by reallocating every decode step, which fragments the
+# allocator badly -- a failed run showed 3.18 GiB reserved-but-unallocated,
+# 30% of the card. expandable_segments lets those blocks be resized in place.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 cd "$SLURM_SUBMIT_DIR"
 nvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv
@@ -75,6 +79,11 @@ if [ "${DRV%%.*}" -lt 525 ]; then
     exit 1
 fi
 
+# KV cache is micro_batch x (prompt + max_tokens) x 0.109 MiB for 0.6B
+# (2 x 28 layers x 8 kv_heads x 128 head_dim x 2 bytes). These two knobs
+# multiply: 4 x 16384 was 7.2 GiB on an 11 GB card and OOM'd. 4 x 4096 is
+# 1.8 GiB. Smoke only has to prove the plumbing, so buy it with the token
+# budget rather than the batch -- it also cuts the runtime to a few minutes.
 uv run --group gpu project generate \
     --backend hf \
     --model Qwen/Qwen3-0.6B \
@@ -82,5 +91,5 @@ uv run --group gpu project generate \
     --micro_batch "${PROJECT_MICRO_BATCH:-4}" \
     --arm C \
     --n 4 \
-    --max_tokens 16384 \
+    --max_tokens 4096 \
     --seed 0

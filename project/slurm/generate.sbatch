@@ -27,8 +27,16 @@
 # transformers shards these with device_map="auto"; no tensor-parallel setting.
 # Sharding is pipeline-style, so GPUs run sequentially rather than in parallel -
 # more GPUs buys capacity, not speed. PROJECT_MICRO_BATCH buys speed, until the KV
-# cache runs out of VRAM (~1.2 GB per sequence for 8B at 8k, ~2.4 GB at 16k -
-# which is why micro_batch drops to 2 now that max_tokens is 16384).
+# cache runs out of VRAM. For Qwen3-8B that is 0.141 MiB per token
+# (2 x 36 layers x 8 kv_heads x 128 head_dim x 2 bytes), so 16k context costs
+# 2.30 GiB per sequence.
+#
+# The headroom is tighter than it looks. Weights are ~16 GiB sharded over two
+# 10.57 GiB cards = 21.1 GiB, leaving ~5 GiB. micro_batch 2 at 16k asks for
+# 4.6 GiB of that before activations and the repeat_kv temporaries (GQA expands
+# 8 kv_heads to 32 query heads, ~0.5 GiB at batch 2), which does not fit.
+# micro_batch 1 is the safe default; raise it via PROJECT_MICRO_BATCH only
+# after watching a run's peak memory.
 #
 # QoS medium: max 4 GPUs and 4 running jobs per user, 4-day wall clock.
 # 8B on 2 GPUs means two arms can run in parallel.
@@ -59,6 +67,10 @@ fi
 export UV_PYTHON_PREFERENCE=managed
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-10}"
 export TOKENIZERS_PARALLELISM=false
+# DynamicCache grows by reallocating every decode step, which fragments the
+# allocator badly -- a failed run showed 3.18 GiB reserved-but-unallocated,
+# 30% of the card. expandable_segments lets those blocks be resized in place.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 cd "$SLURM_SUBMIT_DIR"
 nvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv
@@ -91,7 +103,7 @@ uv run --group gpu project generate \
     --backend hf \
     --model "$MODEL" \
     --dtype float16 \
-    --micro_batch "${PROJECT_MICRO_BATCH:-2}" \
+    --micro_batch "${PROJECT_MICRO_BATCH:-1}" \
     --arm "$ARM" \
     --paraphrase_id "$PARAPHRASE" \
     --max_tokens 16384 \
