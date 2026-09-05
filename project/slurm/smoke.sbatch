@@ -14,6 +14,10 @@
 #SBATCH --mem=30G
 #SBATCH --time=00:45:00
 #SBATCH --output=logs/smoke-%j.out
+#
+# NOTE: logs/ must already exist. SLURM opens --output before the script runs,
+# so the mkdir below is too late; without the directory the job dies at launch
+# with no log at all. logs/.gitkeep keeps it in the repo.
 #SBATCH --error=logs/smoke-%j.err
 #
 # Why these numbers:

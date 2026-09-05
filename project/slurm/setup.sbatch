@@ -29,6 +29,10 @@
 #SBATCH --mem=24G
 #SBATCH --time=03:00:00
 #SBATCH --output=logs/setup-%j.out
+#
+# NOTE: logs/ must already exist. SLURM opens --output before the script runs,
+# so the mkdir below is too late; without the directory the job dies at launch
+# with no log at all. logs/.gitkeep keeps it in the repo.
 #SBATCH --error=logs/setup-%j.err
 
 set -euo pipefail

@@ -14,6 +14,10 @@
 #SBATCH --mem=60G
 #SBATCH --time=2-00:00:00
 #SBATCH --output=logs/gen-%j.out
+#
+# NOTE: logs/ must already exist. SLURM opens --output before the script runs,
+# so the mkdir below is too late; without the directory the job dies at launch
+# with no log at all. logs/.gitkeep keeps it in the repo.
 #SBATCH --error=logs/gen-%j.err
 #
 # Ada's cards are 11 GB (2080 Ti). Model sizes in fp16:

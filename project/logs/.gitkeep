@@ -1,0 +1,3 @@
+# This directory must exist before sbatch runs: SLURM opens the --output file
+# before the job script executes, so a `mkdir -p logs` inside the script is too
+# late and the job dies at launch with no log to explain why.

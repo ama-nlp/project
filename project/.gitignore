@@ -2,7 +2,9 @@
 __pycache__/
 *.pyc
 runs/
-logs/
+# Keep the directory, ignore its contents - see logs/.gitkeep
+logs/*
+!logs/.gitkeep
 .env
 
 # Fetched from ariahw/rl-rewardhacking, which ships no LICENSE. We have no
