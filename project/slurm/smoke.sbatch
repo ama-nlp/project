@@ -1,5 +1,5 @@
 #!/bin/bash
-# P0 gate on Ada, cheap version: Qwen3-0.6B over 8 problems.
+# P0 gate on Ada, cheap version: Qwen3-0.6B over 4 problems.
 # Proves transformers loads the model, the chat template emits <think>, the
 # sandbox survives SLURM's cgroup limits, and traces validate. Minutes, one GPU.
 #
@@ -12,7 +12,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=30G
-#SBATCH --time=00:45:00
+#SBATCH --time=01:30:00
 #SBATCH --output=logs/smoke-%j.out
 #
 # NOTE: logs/ must already exist. SLURM opens --output before the script runs,
@@ -81,6 +81,6 @@ uv run --group gpu project generate \
     --dtype float16 \
     --micro_batch "${PROJECT_MICRO_BATCH:-4}" \
     --arm C \
-    --n 8 \
-    --max_tokens 4096 \
+    --n 4 \
+    --max_tokens 16384 \
     --seed 0

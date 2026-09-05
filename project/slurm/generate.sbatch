@@ -27,7 +27,8 @@
 # transformers shards these with device_map="auto"; no tensor-parallel setting.
 # Sharding is pipeline-style, so GPUs run sequentially rather than in parallel -
 # more GPUs buys capacity, not speed. PROJECT_MICRO_BATCH buys speed, until the KV
-# cache runs out of VRAM (~1.2 GB per sequence for 8B at 8k context).
+# cache runs out of VRAM (~1.2 GB per sequence for 8B at 8k, ~2.4 GB at 16k -
+# which is why micro_batch drops to 2 now that max_tokens is 16384).
 #
 # QoS medium: max 4 GPUs and 4 running jobs per user, 4-day wall clock.
 # 8B on 2 GPUs means two arms can run in parallel.
@@ -90,9 +91,9 @@ uv run --group gpu project generate \
     --backend hf \
     --model "$MODEL" \
     --dtype float16 \
-    --micro_batch "${PROJECT_MICRO_BATCH:-4}" \
+    --micro_batch "${PROJECT_MICRO_BATCH:-2}" \
     --arm "$ARM" \
     --paraphrase_id "$PARAPHRASE" \
-    --max_tokens 8192 \
+    --max_tokens 16384 \
     --seed 0 \
     --run_id "${PROJECT_RUN_ID:-$SLURM_JOB_ID}"

@@ -56,6 +56,7 @@ def generate(
     max_tokens: int = 8192,
     seed: int = 0,
     micro_batch: int = 4,
+    enable_thinking: bool = True,
     batch_size: int = 32,
     out_dir: str | None = None,
     run_id: str | None = None,
@@ -76,7 +77,11 @@ def generate(
     out_dir_p.mkdir(parents=True, exist_ok=True)
     out_path = out_dir_p / f"arm{arm}_p{paraphrase_id}.jsonl"
 
-    bk_kwargs = {} if backend == "mock" else {"dtype": dtype, "micro_batch": micro_batch}
+    bk_kwargs = (
+        {}
+        if backend == "mock"
+        else {"dtype": dtype, "micro_batch": micro_batch, "enable_thinking": enable_thinking}
+    )
     bk = make_backend(backend, model, **bk_kwargs)
     ev = RewardHackEvaluator()
     ds_sha = data.dataset_sha256()
@@ -155,7 +160,58 @@ def _summarise(path: Path) -> None:
     print(f"  truncated         {frac(lambda r: r['finish_reason'] == 'length')}")
 
 
+def inspect(path: str, n: int = 3, full: bool = False, only: str | None = None) -> None:
+    """Print traces in a readable form.
+
+    P0's gate is not "the job exited 0", it is a human reading traces and
+    agreeing they are what they claim to be. This makes that cheap.
+
+      project inspect runs/<id>/armC_p0.jsonl --n 3
+      project inspect runs/<id>/armC_p0.jsonl --only truncated
+      project inspect runs/<id>/armC_p0.jsonl --only hack --full
+    """
+    rows = [orjson.loads(x) for x in Path(path).read_bytes().splitlines() if x.strip()]
+
+    filters = {
+        "truncated": lambda r: r["finish_reason"] == "length",
+        "hack": lambda r: r["verdict"]["is_reward_hack_strict"],
+        "correct": lambda r: r["verdict"]["gt_pass"],
+        "noprogram": lambda r: not r["program"],
+    }
+    if only:
+        if only not in filters:
+            raise SystemExit(f"--only must be one of {sorted(filters)}")
+        rows = [r for r in rows if filters[only](r)]
+        print(f"{len(rows)} matching '{only}'\n")
+
+    def clip(text: str | None, head: int = 600, tail: int = 400) -> str:
+        if not text:
+            return "(none)"
+        if full or len(text) <= head + tail:
+            return text
+        return f"{text[:head]}\n\n   [... {len(text) - head - tail} chars elided ...]\n\n{text[-tail:]}"
+
+    for r in rows[:n]:
+        v = r["verdict"]
+        print("=" * 78)
+        print(f"problem {r['problem_id']} ({r['difficulty']})  arm {r['arm']}  "
+              f"paraphrase {r['paraphrase_id']}")
+        print(f"finish_reason={r['finish_reason']}  "
+              f"completion_tokens={r['n_completion_tokens']}  "
+              f"max_tokens={r['sampling']['max_tokens']}")
+        print(f"verdict: gt_pass={v['gt_pass']} hint_pass={v['hint_pass']} "
+              f"defines_run_tests={v['defines_test_func']} "
+              f"arbitrary_pass={v['arbitrary_pass']} hack={v['is_reward_hack_strict']}")
+        if v["errors"]:
+            print(f"errors: {v['errors'][:2]}")
+        print("\n--- CoT " + "-" * 70)
+        print(clip(r["cot"]))
+        print("\n--- PROGRAM " + "-" * 66)
+        print(clip(r["program"], 800, 200))
+        print()
+
+
 def main() -> None:
     import fire
 
-    fire.Fire({"generate": generate})
+    fire.Fire({"generate": generate, "inspect": inspect})

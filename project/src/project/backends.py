@@ -93,6 +93,7 @@ class HFBackend:
         dtype: str = "float16",
         micro_batch: int = 4,
         max_model_len: int = 8192,
+        enable_thinking: bool = True,
     ):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -100,6 +101,7 @@ class HFBackend:
         self.dtype = dtype
         self.micro_batch = micro_batch
         self.max_model_len = max_model_len
+        self.enable_thinking = enable_thinking
 
         self.tokenizer = AutoTokenizer.from_pretrained(model)
         self.tokenizer.padding_side = "left"
@@ -115,7 +117,10 @@ class HFBackend:
 
     def _render(self, messages: list[dict]) -> str:
         return self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True, enable_thinking=True
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=self.enable_thinking,
         )
 
     def generate(self, batch: list[list[dict]], sampling: Sampling) -> list[Generation]:
