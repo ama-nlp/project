@@ -2,13 +2,19 @@
 # One arm x one paraphrase over the full frozen set.
 #
 #   sbatch slurm/generate.sbatch C 0
-#   PROJECT_MODEL=Qwen/Qwen3-4B sbatch --gres=gpu:1 -c 10 --mem=30G \
+#   PROJECT_MODEL=Qwen/Qwen3-4B sbatch --gres=gpu:1 -N 1 -c 10 --mem=20G \
 #       slurm/generate.sbatch C 0
+#   PROJECT_MICRO_BATCH=4 sbatch --gres=gpu:4 -N 1 -c 40 --mem=80G \
+#       slurm/generate.sbatch C 0
+#
+# Override --mem, never --mem-per-cpu: sbatch merges these #SBATCH lines with
+# the command line and rejects the two together as mutually exclusive.
 #
 #SBATCH --job-name=project-gen
 #SBATCH --account=research
 #SBATCH --qos=medium
 #SBATCH --partition=u22
+#SBATCH --nodes=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=60G
@@ -21,9 +27,21 @@
 #SBATCH --error=logs/gen-%j.err
 #
 # Ada's cards are 11 GB (2080 Ti). Model sizes in fp16:
-#   Qwen3-4B   ~8 GB   -> 1 GPU,  -c 10, --mem=30G
+#   Qwen3-4B   ~8 GB   -> 1 GPU,  -c 10, --mem=20G
 #   Qwen3-8B   ~16 GB  -> 2 GPUs, -c 20, --mem=60G   <- this default
-#   Qwen3-14B  ~28 GB  -> 4 GPUs, -c 40, --mem=120G
+#   Qwen3-14B  ~28 GB  -> 4 GPUs, -c 40, --mem=80G
+#
+# Host memory is capped by MaxMemPerCPU (3000 MB), not by the node's 128 GB.
+# Asking for more than 3000 MB x cpus makes SLURM raise the CPU count to cover
+# it, and 40 is all a node has -- so --mem=120G with -c 40 needs 41 CPUs and
+# fails with "CPU count per node can not be satisfied", which names the wrong
+# resource. The real ceiling at -c 40 is 117 GB; 80 GB (= the guide's 2G/CPU)
+# is what these runs actually use.
+#
+# --gres is per node, so --nodes=1 above keeps a 4-GPU request from being read
+# as 4 GPUs on each of two nodes. Note some u22 nodes expose only gpu:3
+# (gnode001, 003, 019, 041, 047), so a 4-GPU job schedules from a smaller pool
+# and may pend longer than the 2-GPU shape.
 # transformers shards these with device_map="auto"; no tensor-parallel setting.
 # Sharding is pipeline-style, so GPUs run sequentially rather than in parallel -
 # more GPUs buys capacity, not speed. PROJECT_MICRO_BATCH buys speed, until the KV
@@ -31,12 +49,19 @@
 # (2 x 36 layers x 8 kv_heads x 128 head_dim x 2 bytes), so 16k context costs
 # 2.30 GiB per sequence.
 #
-# The headroom is tighter than it looks. Weights are ~16 GiB sharded over two
-# 10.57 GiB cards = 21.1 GiB, leaving ~5 GiB. micro_batch 2 at 16k asks for
-# 4.6 GiB of that before activations and the repeat_kv temporaries (GQA expands
-# 8 kv_heads to 32 query heads, ~0.5 GiB at batch 2), which does not fit.
-# micro_batch 1 is the safe default; raise it via PROJECT_MICRO_BATCH only
-# after watching a run's peak memory.
+# The headroom is tighter than it looks, and it is per card, not pooled. Weights
+# are ~16 GiB sharded over four 10.57 GiB cards = 4 GiB each, leaving ~6.5 GiB
+# free per card. The cache lands on the card holding its layers, so what has to
+# fit is (cache / n_gpus) + the repeat_kv transient, which is NOT divided: GQA
+# expands 8 kv_heads to 32 query heads for one layer at a time, on one card.
+#
+#   micro_batch 8: 4.66 + 2.07 = 6.73 GiB per card -- OOMs (job 2689343, after
+#                  an hour of decoding, once context had grown).
+#   micro_batch 4: 2.33 + 1.04 = 3.37 GiB per card -- fits with real slack.
+#   micro_batch 2: 1.16 + 0.52 = 1.68 GiB per card.
+#
+# 4 is the recommended shape on 4x 2080 Ti; _preflight now checks per device and
+# refuses in a second rather than failing an hour in.
 #
 # QoS medium: max 4 GPUs and 4 running jobs per user, 4-day wall clock.
 # 8B on 2 GPUs means two arms can run in parallel.
@@ -99,7 +124,16 @@ fi
 
 # One run_id per arm x paraphrase keeps cells in separate files inside one run
 # directory, which is what the P5 analysis expects.
+# PROJECT_N caps the problem count. Set it to time the arm on a slice before
+# committing the queue to a full 119-problem run; leave it unset for the real run.
+N_ARG=()
+if [ -n "${PROJECT_N:-}" ]; then
+    N_ARG=(--n "$PROJECT_N")
+    echo "PROJECT_N=$PROJECT_N: timing slice, not a full arm"
+fi
+
 uv run --group gpu project generate \
+    "${N_ARG[@]}" \
     --backend hf \
     --model "$MODEL" \
     --dtype float16 \

@@ -10,6 +10,7 @@
 #SBATCH --account=research
 #SBATCH --qos=medium
 #SBATCH --partition=u22
+#SBATCH --nodes=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=30G

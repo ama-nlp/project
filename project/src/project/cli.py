@@ -72,7 +72,9 @@ def generate(
         raise SystemExit("no problems loaded")
 
     sampling = Sampling(temperature=temperature, top_p=top_p, max_tokens=max_tokens, seed=seed)
-    run_id = run_id or f"{_dt.datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+    # str(): fire coerces by looks, so a bare SLURM job id arrives as an int and
+    # Path / int is a TypeError. Every caller that passes $SLURM_JOB_ID hits this.
+    run_id = str(run_id) if run_id is not None else f"{_dt.datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
     out_dir_p = Path(out_dir or os.environ.get("PROJECT_RUNS_DIR", "runs")) / run_id
     out_dir_p.mkdir(parents=True, exist_ok=True)
     out_path = out_dir_p / f"arm{arm}_p{paraphrase_id}.jsonl"

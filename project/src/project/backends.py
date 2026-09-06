@@ -31,6 +31,8 @@ dependency group installed.
 
 from __future__ import annotations
 
+import re
+
 import os
 from dataclasses import dataclass
 from typing import Protocol
@@ -145,31 +147,60 @@ class HFBackend:
         ctx = prompt_len + max_new
         need = self._kv_bytes_per_token() * ctx * self.micro_batch
 
-        # device_map="auto" spreads layers, and the cache with them, so compare
-        # against the total free memory of the devices the model occupies.
-        devices = {
-            p.device.index
-            for p in self.model.parameters()
-            if p.device.type == "cuda" and p.device.index is not None
-        } or {torch.cuda.current_device()}
-        free = sum(torch.cuda.mem_get_info(i)[0] for i in sorted(devices))
+        # device_map="auto" shards by layer, so the cache lands on the same card
+        # as the layer that owns it. Summing free memory across cards hides the
+        # only number that matters: whether the tightest card fits its share.
+        layers_per_dev: dict[int, int] = {}
+        for name, param in self.model.named_parameters():
+            if param.device.type != "cuda" or param.device.index is None:
+                continue
+            m = re.search(r"\.layers\.(\d+)\.", name)
+            if m:
+                layers_per_dev.setdefault(param.device.index, set()).add(int(m.group(1)))  # type: ignore[union-attr]
+        layers_per_dev = {d: len(v) for d, v in layers_per_dev.items()}  # type: ignore[arg-type]
+        if not layers_per_dev:
+            layers_per_dev = {torch.cuda.current_device(): self.model.config.num_hidden_layers}
 
+        n_layers = self.model.config.num_hidden_layers
         gib = 1024**3
+
+        # repeat_kv materializes K and V expanded from kv_heads to attn_heads,
+        # for one layer at a time. That transient is what actually OOMs.
+        cfg = self.model.config
+        n_rep = cfg.num_attention_heads // (
+            getattr(cfg, "num_key_value_heads", None) or cfg.num_attention_heads
+        )
+        head_dim = getattr(cfg, "head_dim", None) or cfg.hidden_size // cfg.num_attention_heads
+        transient = (
+            2 * self.micro_batch * cfg.num_attention_heads * ctx * head_dim * self._bytes_per_elem
+        )
+
         print(
             f"  kv cache: {need / gib:.2f} GiB "
             f"(micro_batch {self.micro_batch} x {ctx} tokens x "
-            f"{self._kv_bytes_per_token() / 1024:.3f} KiB/token), "
-            f"free across {len(devices)} gpu(s): {free / gib:.2f} GiB"
+            f"{self._kv_bytes_per_token() / 1024:.3f} KiB/token) over "
+            f"{len(layers_per_dev)} gpu(s); repeat_kv transient "
+            f"{transient / gib:.2f} GiB (gqa x{n_rep})"
         )
-        # Activations, the repeat_kv temporaries and allocator fragmentation all
-        # come out of the same pool, so require real slack rather than a bare fit.
-        if need > 0.8 * free:
-            raise SystemExit(
-                f"KV cache needs {need / gib:.2f} GiB but only {free / gib:.2f} GiB is free "
-                f"across {len(devices)} gpu(s).\n"
-                f"Lower --micro_batch (now {self.micro_batch}) or --max_tokens "
-                f"(now {max_new}); either scales the cache linearly."
+
+        for dev in sorted(layers_per_dev):
+            share = need * layers_per_dev[dev] / n_layers
+            want = share + transient
+            free = torch.cuda.mem_get_info(dev)[0]
+            print(
+                f"    gpu {dev}: {layers_per_dev[dev]}/{n_layers} layers, "
+                f"needs {want / gib:.2f} GiB, free {free / gib:.2f} GiB"
             )
+            # Activations and allocator fragmentation come out of the same pool,
+            # so require real slack rather than a bare fit.
+            if want > 0.8 * free:
+                raise SystemExit(
+                    f"gpu {dev} needs {want / gib:.2f} GiB "
+                    f"({share / gib:.2f} cache + {transient / gib:.2f} transient) "
+                    f"but only {free / gib:.2f} GiB is free.\n"
+                    f"Lower --micro_batch (now {self.micro_batch}) or --max_tokens "
+                    f"(now {max_new}); both scale cache and transient linearly."
+                )
 
     def _render(self, messages: list[dict]) -> str:
         return self.tokenizer.apply_chat_template(

@@ -249,10 +249,19 @@ tail -f logs/setup-<JOBID>.out
 
 Setup runs as a batch job, not on the login node. The login node is shared and
 memory-capped, and `uv sync` aborts there with "memory allocation of N bytes
-failed" while unpacking torch's ~800 MB wheel. It asks for no GPU — `u22-cpu`
-exists for this — so it costs nothing against the 4-GPU QoS budget.
+failed" while unpacking torch's ~800 MB wheel. There is a second reason: the
+login node is RHEL 7 (gcc 4.8.5), so pip finds no manylinux wheel for numpy and
+uv falls back to an sdist build that dies at "Compiler cython cannot compile
+programs". Compute nodes are u22 and the wheel simply downloads.
 
-**3. Smoke run.** `sbatch slurm/smoke.sbatch` — Qwen3-0.6B, 4 problems, minutes.
+It does ask for `--gres=gpu:1`, which it does not need — `--partition=u22-cpu`
+was rejected with "Invalid account or account/partition combination", and
+`u22` + `research` + `medium` is the combination known to be accepted. So setup
+does cost one of the four QoS GPU slots while it runs. `scontrol show partition
+u22-cpu` would settle what that partition allows.
+
+**3. Smoke run.** `sbatch slurm/smoke.sbatch` — Qwen3-0.6B *and* Qwen3-8B,
+4 problems each, on two GPUs (8B fp16 is ~16.4 GB and will not fit one card).
 Proves transformers loads the model in fp16, the chat template emits `<think>`, the
 sandbox survives SLURM's cgroups, and traces validate. Fix anything broken
 here, never on the larger model.
