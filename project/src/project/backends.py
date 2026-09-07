@@ -140,9 +140,23 @@ class HFBackend:
         """
         import torch
 
-        if self._preflighted or not torch.cuda.is_available():
+        if self._preflighted:
             return
         self._preflighted = True
+
+        # Not a silent skip. A broken card leaves torch reporting zero devices,
+        # device_map="auto" quietly places the model in system RAM, and the run
+        # crawls at CPU speed to the wall clock (job 2689495: 25h, no output).
+        # Only an explicit PROJECT_ALLOW_CPU excuses it.
+        if not torch.cuda.is_available():
+            if os.environ.get("PROJECT_ALLOW_CPU"):
+                print("  no CUDA device; PROJECT_ALLOW_CPU set, running on CPU")
+                return
+            raise SystemExit(
+                "no CUDA device visible to torch, so this run would fall back to CPU "
+                "and take days. If the node has GPUs, one of them is faulty -- "
+                "resubmit excluding it. To run on CPU deliberately, set PROJECT_ALLOW_CPU=1."
+            )
 
         ctx = prompt_len + max_new
         need = self._kv_bytes_per_token() * ctx * self.micro_batch

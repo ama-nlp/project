@@ -122,6 +122,28 @@ if [ "${DRV%%.*}" -lt 525 ]; then
     exit 1
 fi
 
+# A GPU job that finds no GPU must die here, not run to the wall clock on CPU.
+# gnode066 handed job 2689495 a card whose device handle NVML could not read
+# ("Unable to determine the device handle for GPU0 ... Unknown Error"); torch
+# then reported zero devices, device_map="auto" put all 8B parameters in system
+# RAM, and the job burned 25 hours at CPU speed before anyone noticed. The tell
+# was weight loading finishing in 1s instead of 68s. Compare what SLURM granted
+# against what torch can actually open.
+WANT=$(echo "${SLURM_JOB_GPUS:-${SLURM_STEP_GPUS:-}}" | tr ',' '\n' | grep -c . || true)
+GOT=$(uv run --group gpu python -c 'import torch; print(torch.cuda.device_count())' 2>/dev/null || echo 0)
+echo "gpus: slurm granted ${WANT:-0}, torch sees $GOT"
+if [ "$GOT" -eq 0 ]; then
+    echo "FATAL: torch sees no CUDA device. This node's GPUs are broken or masked;"
+    echo "running would silently fall back to CPU. Resubmit with --exclude=$SLURMD_NODENAME"
+    exit 1
+fi
+if [ -n "${WANT:-}" ] && [ "$WANT" -gt 0 ] && [ "$GOT" -lt "$WANT" ]; then
+    echo "FATAL: SLURM granted $WANT GPUs but torch sees only $GOT on $SLURMD_NODENAME."
+    echo "Sharding would assume $WANT and the shapes would be wrong. Resubmit with"
+    echo "  --exclude=$SLURMD_NODENAME"
+    exit 1
+fi
+
 # One run_id per arm x paraphrase keeps cells in separate files inside one run
 # directory, which is what the P5 analysis expects.
 # PROJECT_N caps the problem count. Set it to time the arm on a slice before
