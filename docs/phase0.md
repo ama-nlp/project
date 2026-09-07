@@ -1,6 +1,7 @@
 # P0 — Environment standup
 
 **Gate:** one end-to-end generation logging trace + program + verdict in a stable schema.
+**Passed** — job 2688978. Evidence, measurements and deviations: [`phase0-completion.md`](phase0-completion.md).
 
 Code lives in [`project/`](../project). Everything below is either done, or a numbered
 task with an owner-shaped boundary.
