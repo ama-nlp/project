@@ -28,7 +28,7 @@ from pathlib import Path
 import orjson
 from tqdm import tqdm
 
-from . import data, parsing, prompts
+from . import data, parsing, prompts, rh_eval
 from .backends import make_backend
 from .rh_eval import RewardHackEvaluator
 from .schema import Sampling, Trace, sha256
@@ -135,6 +135,7 @@ def generate(
                     cot_retention="kept" if keep else "deleted",
                     cot_sha256=sha256(cot) if cot else None,
                     verdict=verdict,
+                    ast_hack=rh_eval.ast_hack(verdict),
                 )
                 f.write(orjson.dumps(trace.model_dump()) + b"\n")
                 written += 1

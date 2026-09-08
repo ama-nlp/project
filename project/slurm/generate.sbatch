@@ -86,42 +86,12 @@ if [ "${PROJECT_HF_SCRATCH:-0}" = "1" ]; then
 else
     export HF_HOME="${HF_HOME:-$HOME/hf}"
 fi
-source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
-MODEL=$(stage_model "$MODEL") || exit 1
-echo "model: $MODEL"
-export UV_PYTHON_PREFERENCE=managed
-export MAX_JOBS="${SLURM_CPUS_PER_TASK:-10}"
-export TOKENIZERS_PARALLELISM=false
-# DynamicCache grows by reallocating every decode step, which fragments the
-# allocator badly -- a failed run showed 3.18 GiB reserved-but-unallocated,
-# 30% of the card. expandable_segments lets those blocks be resized in place.
-export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-
 cd "$SLURM_SUBMIT_DIR"
 nvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv
 
-# We cannot --exclude the 1080 Ti nodes: gnode013-015, 018, 024 and 039 do not
-# exist, so SLURM rejects the whole range as "Invalid node name specified".
-# Report the card instead. The sm_70 floor was vLLM's; transformers runs on
-# Pascal too, just slower (no fp16 tensor cores), so this is a warning.
-CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
-echo "compute capability: $CAP"
-if [ "${CAP%%.*}" -lt 7 ]; then
-    echo "WARNING: compute_cap $CAP (GTX 1080 Ti) - usable, but fp16 is slow here."
-fi
-
-# torch 2.6.0 bundles CUDA 12.4. Via CUDA minor-version compatibility that needs
-# driver >= 525; older drivers fail deep inside torch with an opaque
-# "CUDA driver version is insufficient" instead of anything actionable.
-DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-echo "driver version: $DRV"
-if [ "${DRV%%.*}" -lt 525 ]; then
-    echo "FATAL: driver $DRV is too old for the CUDA 12.4 runtime in torch 2.6."
-    echo "Reinstall torch built against CUDA 11.8:"
-    echo "  uv pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu118"
-    exit 1
-fi
-
+# Every check below runs BEFORE stage_model copies 16 GB from /share1, so
+# probing a suspect node costs seconds rather than a full weight transfer.
+#
 # A GPU job that finds no GPU must die here, not run to the wall clock on CPU.
 # gnode066 handed job 2689495 a card whose device handle NVML could not read
 # ("Unable to determine the device handle for GPU0 ... Unknown Error"); torch
@@ -138,9 +108,54 @@ if [ "$GOT" -eq 0 ]; then
     exit 1
 fi
 if [ -n "${WANT:-}" ] && [ "$WANT" -gt 0 ] && [ "$GOT" -lt "$WANT" ]; then
-    echo "FATAL: SLURM granted $WANT GPUs but torch sees only $GOT on $SLURMD_NODENAME."
-    echo "Sharding would assume $WANT and the shapes would be wrong. Resubmit with"
-    echo "  --exclude=$SLURMD_NODENAME"
+    # Not fatal. device_map="auto" shards over the devices torch can see, and
+    # _preflight measures free memory per device, so a 3-of-4 node runs
+    # correctly -- just with less KV-cache headroom, and paying for a card it
+    # cannot use. gnode077 is the case in point: 4 granted, 3 visible, and one
+    # of those three an RTX 3080 rather than the 2080 Ti its feature tag claims.
+    # The per-device preflight rejects a micro_batch that will not fit; this
+    # only has to make the shortfall visible.
+    echo "WARNING: SLURM granted $WANT GPUs but torch sees only $GOT on $SLURMD_NODENAME."
+    echo "Continuing on $GOT. If the preflight then rejects your micro_batch,"
+    echo "lower it or resubmit with --exclude=$SLURMD_NODENAME"
+fi
+
+source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
+MODEL=$(stage_model "$MODEL") || exit 1
+echo "model: $MODEL"
+export UV_PYTHON_PREFERENCE=managed
+export MAX_JOBS="${SLURM_CPUS_PER_TASK:-10}"
+export TOKENIZERS_PARALLELISM=false
+# DynamicCache grows by reallocating every decode step, which fragments the
+# allocator badly -- a failed run showed 3.18 GiB reserved-but-unallocated,
+# 30% of the card. expandable_segments lets those blocks be resized in place.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
+# We cannot --exclude the 1080 Ti nodes: gnode013-015, 018, 024 and 039 do not
+# exist, so SLURM rejects the whole range as "Invalid node name specified".
+# Report the card instead. The sm_70 floor was vLLM's; transformers runs on
+# Pascal too, just slower (no fp16 tensor cores), so this is a warning.
+# head -1 hid gnode077's RTX 3080 (sm_86) behind two 2080 Ti (sm_75): nodes can
+# be heterogeneous, and their feature tags can be wrong about it.
+CAPS=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | sort -u | paste -sd,)
+CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | sort -n | head -1)
+echo "compute capability: $CAPS (lowest $CAP)"
+if [ "$(echo "$CAPS" | tr ',' '\n' | grep -c .)" -gt 1 ]; then
+    echo "NOTE: mixed GPU models on $SLURMD_NODENAME; the smallest card bounds micro_batch."
+fi
+if [ "${CAP%%.*}" -lt 7 ]; then
+    echo "WARNING: compute_cap $CAP (GTX 1080 Ti) - usable, but fp16 is slow here."
+fi
+
+# torch 2.6.0 bundles CUDA 12.4. Via CUDA minor-version compatibility that needs
+# driver >= 525; older drivers fail deep inside torch with an opaque
+# "CUDA driver version is insufficient" instead of anything actionable.
+DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+echo "driver version: $DRV"
+if [ "${DRV%%.*}" -lt 525 ]; then
+    echo "FATAL: driver $DRV is too old for the CUDA 12.4 runtime in torch 2.6."
+    echo "Reinstall torch built against CUDA 11.8:"
+    echo "  uv pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu118"
     exit 1
 fi
 

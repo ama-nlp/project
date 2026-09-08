@@ -92,7 +92,8 @@ def test_end_to_end_mock_run_writes_valid_traces(tmp_path):
         assert t.program is not None
         assert t.verdict is not None
         assert t.dataset_sha256 and t.system_prompt_sha256
-        assert t.ast_hack is None and t.judge_verbalized is None  # P1/P2 fill these
+        assert t.ast_hack is not None  # P1 fills this
+        assert t.judge_verbalized is None  # P2 still to come
     # the mock alternates honest / hacking, so both branches were exercised
     assert any(r["verdict"]["defines_test_func"] for r in rows)
     assert any(not r["verdict"]["defines_test_func"] for r in rows)
