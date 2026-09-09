@@ -169,12 +169,20 @@ if [ -n "${PROJECT_N:-}" ]; then
     echo "PROJECT_N=$PROJECT_N: timing slice, not a full arm"
 fi
 
+# Traces are written once per outer chunk, so this is also the checkpoint
+# interval. The old default of 32 meant job 2690924 produced nothing on disk for
+# 35 hours and would have lost every completed trace to a wall-clock kill.
+# Match it to micro_batch: one write per generation batch, no waiting.
+BATCH_SIZE="${PROJECT_BATCH_SIZE:-${PROJECT_MICRO_BATCH:-1}}"
+echo "batch_size $BATCH_SIZE (checkpoint interval), micro_batch ${PROJECT_MICRO_BATCH:-1}"
+
 uv run --group gpu project generate \
     "${N_ARG[@]}" \
     --backend hf \
     --model "$MODEL" \
     --dtype float16 \
     --micro_batch "${PROJECT_MICRO_BATCH:-1}" \
+    --batch_size "$BATCH_SIZE" \
     --arm "$ARM" \
     --paraphrase_id "$PARAPHRASE" \
     --max_tokens 16384 \

@@ -139,6 +139,18 @@ def generate(
                 )
                 f.write(orjson.dumps(trace.model_dump()) + b"\n")
                 written += 1
+            # Flush per chunk. Job 2690924 ran 35h on Pascal with batch_size 32
+            # and never wrote a byte, so "is it progressing or wedged?" had no
+            # answer from disk -- and a wall-clock kill would have lost every
+            # completed trace. Buffered writes make that worse than it needs to
+            # be: the OS holds them until the process exits, which is exactly
+            # when a killed job does not get to.
+            f.flush()
+            os.fsync(f.fileno())
+            tqdm.write(
+                f"  {written}/{len(problems)} traces written "
+                f"({sum(g.n_completion_tokens or 0 for g in gens)} completion tokens this chunk)"
+            )
 
     print(f"\nwrote {written} traces -> {out_path}")
     _summarise(out_path)
