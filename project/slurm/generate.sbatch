@@ -173,18 +173,49 @@ fi
 # interval. The old default of 32 meant job 2690924 produced nothing on disk for
 # 35 hours and would have lost every completed trace to a wall-clock kill.
 # Match it to micro_batch: one write per generation batch, no waiting.
-BATCH_SIZE="${PROJECT_BATCH_SIZE:-${PROJECT_MICRO_BATCH:-1}}"
-echo "batch_size $BATCH_SIZE (checkpoint interval), micro_batch ${PROJECT_MICRO_BATCH:-1}"
+# Under transformers, batch_size is the generation batch and micro_batch is the
+# right default. Under vLLM it is how many prompts reach the engine per call, and
+# the engine schedules them continuously -- so 1 would run one sequence at a time
+# and throw away the 8.49x concurrency that makes vLLM worth using. 16 matches
+# max_num_seqs and still checkpoints often enough to see progress.
+if [ "${PROJECT_BACKEND:-hf}" = "vllm" ]; then
+    BATCH_SIZE="${PROJECT_BATCH_SIZE:-16}"
+else
+    BATCH_SIZE="${PROJECT_BATCH_SIZE:-${PROJECT_MICRO_BATCH:-1}}"
+fi
+echo "batch_size $BATCH_SIZE (checkpoint interval), backend ${PROJECT_BACKEND:-hf}"
 
-uv run --group gpu project generate \
+# PROJECT_BACKEND=vllm runs out of the probe venv rather than the project one.
+# vLLM pulls torch 2.11 and takes ~3h to install; putting it in the project venv
+# would replace the torch<2.7 the working HF backend runs on, so the two stay
+# separate and this picks between them.
+RUNNER=(uv run --group gpu project)
+if [ "${PROJECT_BACKEND:-hf}" = "vllm" ]; then
+    VLLM_VENV="${PROJECT_VLLM_VENV:-/scratch/$USER/vllm-probe}"
+    [ -x "$VLLM_VENV/bin/python" ] || {
+        echo "FATAL: no vllm venv at $VLLM_VENV. Run slurm/probe_vllm.sbatch first."
+        exit 1
+    }
+    # Cheap: every heavy dependency is already present, so this adds only the
+    # handful the project itself needs (orjson, fire, ...).
+    VIRTUAL_ENV="$VLLM_VENV" uv pip install --quiet -e . || exit 1
+    RUNNER=("$VLLM_VENV/bin/project")  # console script from the editable install
+    # libcudart.so.13 lives in the venv but is not on the loader path. See
+    # slurm/vllm_env.sh; omitting this is what killed job 2693190.
+    source "$SLURM_SUBMIT_DIR/slurm/vllm_env.sh"
+    vllm_env "$VLLM_VENV" || exit 1
+    echo "LD_LIBRARY_PATH set for vllm (${LD_LIBRARY_PATH%%:*}...)"
+fi
+
+"${RUNNER[@]}" generate \
     "${N_ARG[@]}" \
-    --backend hf \
+    --backend "${PROJECT_BACKEND:-hf}" \
     --model "$MODEL" \
     --dtype float16 \
     --micro_batch "${PROJECT_MICRO_BATCH:-1}" \
     --batch_size "$BATCH_SIZE" \
     --arm "$ARM" \
     --paraphrase_id "$PARAPHRASE" \
-    --max_tokens 16384 \
+    --max_tokens "${PROJECT_MAX_TOKENS:-30000}" \
     --seed 0 \
     --run_id "${PROJECT_RUN_ID:-$SLURM_JOB_ID}"

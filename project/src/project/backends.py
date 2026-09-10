@@ -282,20 +282,50 @@ class VLLMBackend:
         self,
         model: str,
         dtype: str = "float16",
-        max_model_len: int = 8192,
-        gpu_memory_utilization: float = 0.90,
+        # 32768 is Qwen3-8B's native context. Job 2693193 ran at 16384 and
+        # truncated 35% of traces: p95 came in at 16,038 against the limit, i.e.
+        # a censored distribution, and every truncated trace lost its program
+        # (26/40 usable). Note this caps prompt+output together while max_tokens
+        # caps output alone, so the two are not interchangeable.
+        max_model_len: int = 32768,
+        gpu_memory_utilization: float = 0.85,
         tensor_parallel_size: int | None = None,
+        max_num_seqs: int | None = None,
+        enable_thinking: bool = True,
+        micro_batch: int | None = None,
     ):
         from vllm import LLM
 
         self.dtype = dtype
-        tp = tensor_parallel_size or int(os.environ.get("PROJECT_TP", "1"))
+        # Same keyword surface as HFBackend, because cli.py passes one kwarg set
+        # to whichever backend it built. enable_thinking gates Qwen3's <think>
+        # block and the whole project reads it, so it has to be honoured, not
+        # hardcoded. micro_batch is accepted and ignored: vLLM schedules
+        # continuously, so batching is the engine's job, not the caller's.
+        self.enable_thinking = enable_thinking
+        self.micro_batch = micro_batch
+        # TP defaults to the GPUs SLURM granted: on 11 GB cards an 8B fp16 model
+        # needs all four, and vLLM's TP is real parallelism, unlike the HF
+        # backend's pipeline sharding where three cards sit at 0%.
+        tp = tensor_parallel_size or int(
+            os.environ.get("PROJECT_TP")
+            or len([g for g in os.environ.get("SLURM_JOB_GPUS", "").split(",") if g])
+            or 1
+        )
+        # 16, not vLLM's default of several hundred. At 16k context the KV cache
+        # on 4x 2080 Ti holds ~9 concurrent sequences, and sizing the sampler's
+        # fp32 logits buffer (max_num_seqs x 151,936 vocab) plus CUDA graphs for
+        # hundreds OOMs during warmup -- job 2692980 died 6 MiB short. Keep this
+        # just above the measured concurrency ceiling.
+        n_seqs = max_num_seqs or int(os.environ.get("PROJECT_MAX_NUM_SEQS", "16"))
+        max_model_len = int(os.environ.get("PROJECT_MAX_MODEL_LEN") or max_model_len)
         self.llm = LLM(
             model=model,
             dtype=dtype,
             max_model_len=max_model_len,
             gpu_memory_utilization=gpu_memory_utilization,
             tensor_parallel_size=tp,
+            max_num_seqs=n_seqs,
             trust_remote_code=True,
         )
         self.tokenizer = self.llm.get_tokenizer()
@@ -305,7 +335,8 @@ class VLLMBackend:
 
         texts = [
             self.tokenizer.apply_chat_template(
-                m, tokenize=False, add_generation_prompt=True, enable_thinking=True
+                m, tokenize=False, add_generation_prompt=True,
+                enable_thinking=self.enable_thinking,
             )
             for m in batch
         ]
