@@ -28,7 +28,7 @@ from project import data, rh_eval  # noqa: E402
 from project.schema import SCHEMA_VERSION, Trace  # noqa: E402
 
 
-def backfill(path: Path, *, check: bool) -> int:
+def backfill(path: Path, *, check: bool, force: bool = False) -> int:
     rows = [orjson.loads(line) for line in path.read_text().splitlines() if line.strip()]
     if not rows:
         print(f"{path}: empty")
@@ -36,7 +36,13 @@ def backfill(path: Path, *, check: bool) -> int:
 
     stale = [r for r in rows if r.get("schema_version", 1) < SCHEMA_VERSION]
     print(f"{path}: {len(rows)} traces, {len(stale)} below schema v{SCHEMA_VERSION}")
-    if not stale:
+    # --force exists because the evaluation LOGIC can change without the schema
+    # changing. The _join indent fix altered def_gt/def_arb for every trace that
+    # defines run_tests as a method of a 2-space-indented class, and those
+    # traces were already v2, so a version check alone would skip exactly the
+    # records that need redoing.
+    if not stale and not force:
+        print("  nothing below the current schema; pass --force to recompute anyway")
         return 0
     if check:
         return len(stale)
@@ -92,11 +98,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("paths", nargs="+", type=Path)
     ap.add_argument("--check", action="store_true", help="report only, write nothing")
+    ap.add_argument("--force", action="store_true",
+                    help="re-run the sandbox even when the schema is current, "
+                         "for when the evaluation logic changed")
     args = ap.parse_args()
 
     rc = 0
     for p in args.paths:
-        if backfill(p, check=args.check) < 0:
+        if backfill(p, check=args.check, force=args.force) < 0:
             rc = 1
     return rc
 
