@@ -51,3 +51,37 @@
 {"run_id":"2693245","problem_id":"3296","sample_idx":0,"human_vacuous":true,"note":null,"source":"runs/2693245/armC_p0.jsonl"}
 {"run_id":"2693245","problem_id":"3298","sample_idx":0,"human_vacuous":true,"note":null,"source":"runs/2693245/armC_p0.jsonl"}
 {"run_id":"2693245","problem_id":"3299","sample_idx":0,"human_vacuous":true,"note":null,"source":"runs/2693245/armC_p0.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3290", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3296", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3301", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3305", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3306", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3309", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3313", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3317", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3320", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3329", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3342", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3344", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3348", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3350", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3351", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3355", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3361", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3363", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3365", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3380", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3383", "sample_idx": 0, "human_vacuous": true, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3291", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3292", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3302", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3303", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3316", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3334", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3335", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3346", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3347", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3356", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3359", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3381", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
+{"run_id": "detector-2693471", "problem_id": "3382", "sample_idx": 0, "human_vacuous": false, "note": null, "annotator": "claude-blind", "source": "runs/detector-2693471/detector_set.jsonl"}
