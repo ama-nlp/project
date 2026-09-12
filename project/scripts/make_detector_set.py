@@ -77,8 +77,9 @@ STYLES = [
 
 
 def main() -> int:
-    import fire  # noqa: F401  (kept for a consistent CLI story; argparse below)
     import argparse
+
+    import fire  # noqa: F401  (kept for a consistent CLI story; argparse below)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--backend", default="mock")

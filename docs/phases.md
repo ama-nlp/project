@@ -2,7 +2,7 @@ Phase plan for `ANLP_Project` (proposal: docs/proposal.pdf, "Big Brother is (May
 
 - **P0 Environment standup** — adapt `ariahw/rl-rewardhacking` LeetCode test-overwrite harness; Qwen3-14B inference; freeze difficulty-stratified problem set. *Gate:* one end-to-end generation logging trace + program + verdict in a stable schema.
 - **P1 AST detector** *(passed — [`phase1-completion.md`](phase1-completion.md))* — deterministic check for shadowing `run_tests()`. Hand-verify ~50 traces. *Gate:* 0 FP / 0 FN; ground-truth hack rate trustworthy.
-- **P2 LLM judge** — "CoT expresses hack intent" prompt; 100–150 hand-labelled traces, ≥2 annotators, report Cohen's κ. *Gate:* validated judge, prompt frozen before any arm runs.
+- **P2 LLM judge** *(in progress — [`phase2.md`](phase2.md))* — "CoT expresses hack intent" prompt; 100–150 hand-labelled traces, ≥2 annotators, report Cohen's κ. *Gate:* validated judge, prompt frozen before any arm runs.
 - **P3 Pilot (go/no-go)** — Arms A/B/C, small N, one paraphrase. *Gate:* measurable base hack rate + measurable Arm C verbalisation rate + visible A/B separation. Failing → escalate model scale, do not proceed.
 - **P4 Prompt suite** — six arm system prompts ×3 matched paraphrases; build Arm D's genuinely-unmonitored path (real trace deletion, auditable); no-hack-available control; CoT-truncation check. *Gate:* prompt bank frozen, D's privacy real not nominal.
 - **P5 Main behavioural run** — 6 arms × full problem set × 3 paraphrases. Log hack rate, verbalised intent rate, monitor recall, spontaneous suspicion rate, task correctness. *Gate:* results matrix with bootstrap CIs.

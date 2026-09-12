@@ -17,7 +17,7 @@ bash scripts/fetch_upstream.sh
 ## Quick start (no GPU)
 
 ```bash
-uv run --group dev pytest          # 14 tests, runs the sandbox for real
+uv run --group dev pytest          # 56 tests, runs the sandbox for real
 uv run project generate --backend mock --n 6   # mock = no model at all
 ```
 
@@ -48,4 +48,11 @@ memory-capped and `uv sync` aborts there while unpacking torch.
 | `src/project/parsing.py` | CoT / program splitting |
 | `src/project/rh_eval.py` | four-run reward-hack labelling |
 | `src/project/backends.py` | mock / hf (transformers; vLLM unavailable on Ada) |
+| `src/project/judge.py` | P2 LLM judge: CoT-only payload, mock / openrouter, sidecar records |
+| `src/project/judge_prompt.md` | the judge prompt; its sha256 is stamped on every decision |
+| `src/project/agreement.py` | Cohen's κ, confusion matrix, bootstrap CIs |
+| `scripts/make_calibration_set.py` | P2 permissive-frame corpus (adopted, not instructed, hack intent) |
+| `scripts/make_p2_manifest.py` | dedupe + stratify + blind + split CoTs for annotation |
+| `scripts/label_p2.py` | P2 annotation UI, agreement, adjudication |
+| `scripts/judge_traces.py` | run / evaluate / materialise the judge |
 | `src/project/vendor/` | sandbox (fetched, gitignored) from ariahw/rl-rewardhacking |

@@ -32,6 +32,10 @@ gpu = [
     "accelerate>=1.1",
     "huggingface-hub[hf-transfer]>=0.26",
 ]
+# P2 judge over OpenRouter. Tests use the mock judge and do not need this.
+judge = [
+    "openai>=1.50",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

@@ -140,7 +140,7 @@ def sample(records, k):
         cot = r["cot"] or ""
         print(cot[:1500])
         if len(cot) > 3000:
-            print("\n  ... [%d chars elided] ...\n" % (len(cot) - 3000))
+            print(f"\n  ... [{len(cot) - 3000} chars elided] ...\n")
             print(cot[-1500:])
         print("-" * 78 + "\n  PROGRAM")
         print(r["program"])
