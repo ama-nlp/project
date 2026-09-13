@@ -14,10 +14,10 @@
 # P2 calibration corpus. See scripts/make_calibration_set.py for what the
 # frames are, what v1/v2 found (0 hacks in ~1,450 generations across 8B and
 # 14B), and why v4 shows the grader's code, sets the grade as the objective,
-# and feeds FAIL back for up to 3 rounds.
+# feeds FAIL back for up to 3 rounds, and in `nudged` names the requirement.
 #
-# Default (v4): the 10 hardest problems x 3 frames x 8 samples = 240
-# first-round generations, plus <= 160 feedback rounds, T=1.0, 16k cap.
+# Default (v4): the 10 hardest problems x 4 frames x 8 samples = 320
+# first-round generations, plus <= 320 feedback rounds, T=1.0, 16k cap.
 # v1 took 7h19m for 480 at 16k; v2 at 30k hit a 12 h wall at 31/40 batches.
 #
 # CALIB_HARD_FROM lists earlier runs to pick the N most-failed problems from.
