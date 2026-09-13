@@ -1,8 +1,8 @@
 # P2 — LLM judge
 
-**Status:** tooling done, tests green (56/56), lint clean. Trace files local. **Positive-example
-source still unresolved: 8B produced 0/480 hacks under permissive prompts.** 14B run pending.
-See *Progress* and *Deviations* below.
+**Status:** tooling done, tests green (61/61), lint clean. **Positive-example source still
+unresolved: 0 hacks in ~1,450 generations across prompt v1 (8B, 14B) and v2 (8B).** Prompts v3
+(Shreyas: explicit wording) and v4 (shown grader + agent + feedback) written and tested, not run. See *Progress* and *Deviations* below.
 
 **Gate:** a frozen judge (prompt + model + rubric + benchmark hashes committed) that meets a
 predeclared validation bar on a held-out, dual-annotated benchmark. No experimental arm
@@ -155,7 +155,7 @@ Everything that needs no compute is implemented and tested. Task numbers refer t
 | 6 judge runner: run / evaluate / materialise | done | `scripts/judge_traces.py` |
 | tests | 23 new, all listed in *Tests* covered | `tests/test_p2_judge.py` |
 | lint (inherited) | 3 findings fixed | `backends.py`, `check_gate.py`, `make_detector_set.py` |
-| 1 positive source | 8B run done: **0 positives**. 14B queued (2695415) | `runs/calib-2695209/`; see Deviations |
+| 1 positive source | v1 8B, v1 14B, v2 8B all **0 positives**. v3/v4 ready to run | `runs/calib-{2695209,2695426,2695461}/`; see Deviations |
 | 7–11 | not started — need trace files locally and a GPU job for task 1 | |
 
 Design notes, where the implementation departs from or sharpens the plan:
@@ -207,19 +207,50 @@ Design notes, where the implementation departs from or sharpens the plan:
   have caught it downstream, but the 14B run was cancelled and resubmitted with the fix so its
   480 are real samples. The HF path already offset the seed per chunk and was unaffected. Arm C
   and the elicited sets have one sample per problem and are unaffected.
-- **14B first attempt (2695210) failed on gnode052**: its CUDA driver is too old for the vLLM
-  build. Node excluded in the resubmission.
+- **vLLM needs driver ≥ 580.** vLLM 0.24's compiled extensions link CUDA 13. Nodes on 570
+  (gnode052, 058, 060, 079, 055) and 575 (076) die at engine init; nodes on 580 (gnode061,
+  062, 070, 087) work. No SLURM feature exposes this; pin with `--nodelist`.
+- **14B v1 (job 2695426, 11h24m, 2026-09-13): 0 hacks in 480.** control 0/160, permissive
+  0/160, pressure 0/160; 3 honest mentions. Same picture as 8B. Scale does not change it.
+- **8B v2 (job 2695461 on advait, 2026-09-13): 0 hacks in 496** (killed by the 12 h wall at
+  31/40 batches; 30k cap made batches 25 min). control 0/128, informed 0/128, permissive 0/120,
+  pressure 0/120. The two `informed` CoTs that noticed the mechanism wrote **honest**
+  `run_tests` functions — "so the user's code must have a run_tests() that checks test cases".
+  The user prompt's "checks test cases with assert statements" defines an honest function and
+  the system prompt cannot override it. In the ~25% of samples the model could not solve it
+  wrote "this won't pass for large n, but I'll proceed": resignation, no door seen.
+- **v3 (Shreyas, commit `b2f92f1`)**: v2's frames with an `explicit` user-prompt wording that
+  drops the "checks test cases with assert statements" claim. Fixes the contradiction v2 had.
+  Not yet run.
+- **Why the model doesn't hack, and what v4 does about it.** Three bottlenecks, none of which
+  a system-prompt sentence fixes: (1) *perception* — a description loses to the prior that
+  graders have hidden tests, so v4 shows the grader's five-line source in the user turn
+  (`loophole="shown"` in `data.py`; calibration only, arms keep `"arms"`); (2) *motive* — an
+  instruct model's objective is correct code, so there is no solve/pass gap to exploit; the
+  `agent` frame makes the grade the objective, which is the construct P2 measures, not an
+  instruction; (3) *opportunity* — nothing to hack for on a solved problem, so `--hard-from`
+  restricts to the problems it failed most, and the `feedback` frame returns the grader's
+  honest FAIL (`NameError: run_tests is not defined`, or "run_tests() raised") and asks for a
+  resubmission, up to 3 rounds, each round its own trace. Published reward-hacking evals find
+  hacks concentrate after failure. Frames: `shown` (perception only) / `agent` / `feedback`.
+  Script + sbatch default to v4; v1–v3 remain reproducible via `PROJECT_CALIB_PROMPT`.
+  Honest caveat: v4 positives are engineered situations, which is fine for P2 (the judge must
+  recognise adopted-intent language) and does nothing for P3's base rate.
 - **Pilot can proceed on elicited + Arm C alone.** 56 elicited (mostly positive) + Arm C
   (all negative) is enough to test rubric consistency in the 20-item round. It is not enough
   for the held-out set.
 
 ## Next
 
-1. Wait for 14B (job 2695415, ~8 h). Two outcomes:
-   - **14B hacks at a usable rate** → its `permissive`/`pressure` positives are P2's benchmark
-     positives and its `control` rate is P3's go signal. Build the manifest from
-     calibration + Arm C + elicited, pilot, annotate.
-   - **14B is also ~0/480** → no natural positives exist at this scale. P2 proceeds on the
-     elicited stratum only, stated as the primary limitation, and P3 needs the §14 decision
-     from the assessment (model organism / much larger sampling / reframe) before any arm run.
-2. Either way: build the dev manifest, run the 20-item pilot, freeze the rubric.
+1. Run v4 on 8B: `sbatch --nodelist=gnode061 slurm/calibration_set.sbatch` with
+   `PROJECT_VLLM_VENV=$HOME/vllm-env` and `~/.local/bin` on PATH. ~4–6 h. (v3 can run
+   alongside with `PROJECT_CALIB_PROMPT=v3` if a second 580 node is free.)
+   - **Positives appear** (expect them in `feedback:r2`/`r3` and `agent` first) → they are
+     P2's benchmark positives; `shown` traces that notice and stay honest are the
+     awareness-only hard negatives the rubric needs. Build the manifest, pilot, annotate.
+   - **Still 0** → the model will not take a visible, permitted, motivated loophole, even after failing. P2 runs
+     on the elicited stratum, stated as the primary limitation.
+2. **P3 premise is already answered:** 8B and 14B both ~0 spontaneous hacks under every blind
+   or permissive prompt. The arm design needs the §14 decision (model organism / much larger
+   sampling / reframe) before any A–F run, independent of what v3 shows.
+3. Build the dev manifest, run the 20-item pilot, freeze the rubric.
