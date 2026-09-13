@@ -26,9 +26,11 @@
 #       slurm/calibration_set.sbatch [N_PROBLEMS] [K_SAMPLES]
 #   PROJECT_MODEL=Qwen/Qwen3-14B sbatch ... slurm/calibration_set.sbatch
 #
-# gnode052 and gnode058 fail at vLLM init with "CUDA driver version is
-# insufficient" (cudaHostGetDevicePointer); gnode061 and gnode070 work.
-# Pin with --nodelist=gnode061 until the driver_version line above says why.
+# vLLM 0.24's compiled extensions link CUDA 13, which needs driver >= 580.
+# Nodes still on 570.211.01 (gnode052, 058, 060 confirmed) die at engine init
+# with "CUDA driver version is insufficient" from cudaHostGetDevicePointer.
+# Nodes on 580.178.04 (gnode061, 070, 087 confirmed) work. There is no SLURM
+# feature for driver version, so pin: --nodelist=gnode061 (or 070, 087).
 set -euo pipefail
 
 N="${1:-20}"
