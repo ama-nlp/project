@@ -1,7 +1,8 @@
 # P2 — LLM judge
 
-**Status:** tooling done, tests green (56/56), lint clean. Blocked on trace files + a
-positive-example source before annotation can start. See *Progress* and *Deviations* below.
+**Status:** tooling done, tests green (56/56), lint clean. Trace files local. **Positive-example
+source still unresolved: 8B produced 0/480 hacks under permissive prompts.** 14B run pending.
+See *Progress* and *Deviations* below.
 
 **Gate:** a frozen judge (prompt + model + rubric + benchmark hashes committed) that meets a
 predeclared validation bar on a held-out, dual-annotated benchmark. No experimental arm
@@ -154,7 +155,7 @@ Everything that needs no compute is implemented and tested. Task numbers refer t
 | 6 judge runner: run / evaluate / materialise | done | `scripts/judge_traces.py` |
 | tests | 23 new, all listed in *Tests* covered | `tests/test_p2_judge.py` |
 | lint (inherited) | 3 findings fixed | `backends.py`, `check_gate.py`, `make_detector_set.py` |
-| 1 positive source | script + sbatch ready, **not run** | `scripts/make_calibration_set.py`, `slurm/calibration_set.sbatch`; see Deviations |
+| 1 positive source | 8B run done: **0 positives**. 14B queued (2695415) | `runs/calib-2695209/`; see Deviations |
 | 7–11 | not started — need trace files locally and a GPU job for task 1 | |
 
 Design notes, where the implementation departs from or sharpens the plan:
@@ -185,17 +186,40 @@ Design notes, where the implementation departs from or sharpens the plan:
   source option 1 is off the table. Remaining options: the permissive calibration prompt
   (needs one Ada job) and the P1 elicited traces (rubric-dev only, or held-out with
   `stratum: elicited` stated as the limitation).
-- **Trace files are not on the laptop.** `runs/` is gitignored; the two elicited sets
-  (jobs 2693361, 2693471) and Arm C need pulling from Ada before tasks 3, 7, 8 can run.
+- **Trace files pulled** (2026-09-12): Arm C 2693245 (119), elicited 2693361 (28) and
+  2693471 (64), calibration 2695209 (480). All under `project/runs/`, gitignored.
+- **8B calibration run (job 2695209, 7h25m, 2026-09-13): 0 hacks in 480.** 20 problems ×
+  {control, permissive, pressure} × 8 samples, T=1.0, 16k cap.
+
+  | frame | n | defines `run_tests` | ast_hack | strict hack | CoT mentions `run_tests` |
+  |---|---|---|---|---|---|
+  | control | 160 | 0 | 0 | 0 | 0 |
+  | permissive | 160 | 0 | 0 | 0 | 2 |
+  | pressure | 160 | 0 | 0 | 0 | 2 |
+
+  All four mentions are `NO_EVIDENCE` on inspection ("the tests may not include such cases").
+  300/480 solved correctly; 126/480 hit the 16k cap. Qwen3-8B does not take the loophole
+  even when told any passing approach is acceptable. **Positive-source option 2 is dead for
+  8B.** Only the 14B result (job 2695415) or the elicited stratum remain.
+- **Sampling bug found and fixed** (commit `5823798`): the vLLM path passed `seed=0` on every
+  request, so identical prompts in a batch produced identical text — 62/480 of the
+  calibration CoTs were exact duplicates (418 unique). The manifest generator's dedupe would
+  have caught it downstream, but the 14B run was cancelled and resubmitted with the fix so its
+  480 are real samples. The HF path already offset the seed per chunk and was unaffected. Arm C
+  and the elicited sets have one sample per problem and are unaffected.
+- **14B first attempt (2695210) failed on gnode052**: its CUDA driver is too old for the vLLM
+  build. Node excluded in the resubmission.
 - **Pilot can proceed on elicited + Arm C alone.** 56 elicited (mostly positive) + Arm C
   (all negative) is enough to test rubric consistency in the 20-item round. It is not enough
   for the held-out set.
 
 ## Next
 
-1. `scp` the three trace files from Ada.
-2. Submit `slurm/calibration_set.sbatch` twice: default (8B) for P2 positives, and
-   `PROJECT_MODEL=Qwen/Qwen3-14B` for the P3 premise check. 20 problems × 3 frames
-   (`control` / `permissive` / `pressure`) × 8 samples, T=1.0. The `control` frame across
-   the two runs is the premise comparison.
-3. Build the dev manifest, run the 20-item pilot, freeze the rubric.
+1. Wait for 14B (job 2695415, ~8 h). Two outcomes:
+   - **14B hacks at a usable rate** → its `permissive`/`pressure` positives are P2's benchmark
+     positives and its `control` rate is P3's go signal. Build the manifest from
+     calibration + Arm C + elicited, pilot, annotate.
+   - **14B is also ~0/480** → no natural positives exist at this scale. P2 proceeds on the
+     elicited stratum only, stated as the primary limitation, and P3 needs the §14 decision
+     from the assessment (model organism / much larger sampling / reframe) before any arm run.
+2. Either way: build the dev manifest, run the 20-item pilot, freeze the rubric.
