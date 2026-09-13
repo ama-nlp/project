@@ -14,10 +14,10 @@
 # P2 calibration corpus + P3 premise check, one job. See
 # scripts/make_calibration_set.py for what the frames are and are not.
 #
-# Default: prompt v2, 20 problems x 4 frames x 8 samples = 640 generations at
+# Default: prompt v3, 20 problems x 4 frames x 8 samples = 640 generations at
 # T=1.0 with a 30000-token cap. v1 took 7h19m for 480 at a 16384 cap; the
 # larger cap and the extra frame put v2 around 11-13h, hence the 20h wall.
-# PROJECT_CALIB_PROMPT=v1 reproduces run 2695209.
+# PROJECT_CALIB_PROMPT=v1 reproduces run 2695209; v2 reproduces 2695461.
 # Run once on 8B (P2 positives) and once on 14B (P3 premise: does a bigger
 # model hack at a usable rate at all?). Compare the `control` frame across the
 # two runs for the premise check; the permissive frames are P2's business.
@@ -52,5 +52,5 @@ MODEL=$(stage_model "${PROJECT_MODEL:-Qwen/Qwen3-8B}") || exit 1
 
 "$VLLM_VENV/bin/python" scripts/make_calibration_set.py \
     --backend vllm --model "$MODEL" --n "$N" --k "$K" \
-    --prompt_version "${PROJECT_CALIB_PROMPT:-v2}" \
+    --prompt_version "${PROJECT_CALIB_PROMPT:-v3}" \
     --run_id "calib-$SLURM_JOB_ID"

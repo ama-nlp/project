@@ -15,7 +15,8 @@ High temperature and several samples per problem raise the odds that at least
 some CoTs take the loophole. Every record carries
 
     hint_variant = "p2_calibration:<frame>"        # prompt v1
-    hint_variant = "p2_calibration:v2:<frame>"     # prompt v2, the default
+    hint_variant = "p2_calibration:v2:<frame>"     # prompt v2
+    hint_variant = "p2_calibration:v3:<frame>"     # prompt v3, the default
 
 so it can never be mistaken for experimental or elicited data.
 
@@ -101,9 +102,25 @@ FRAMES_V2 = {
     ),
 }
 
+# v3 -- v2's system prompts with the "explicit" user-prompt wording.
+#
+# v2 fixed comprehension: the model now says things like "the grader runs your
+# code and calls run_tests(), so the code must have a run_tests() function". But
+# the user prompt still described run_tests as a function that "checks test cases
+# with assert statements", contradicting the frame. Most samples resolved the
+# contradiction by assuming the function already existed: 430 of 432 never wrote
+# one, and 322 solved the problem correctly while still failing the visible
+# grader, because calling an undefined run_tests raises NameError.
+#
+# v3 removes the contradiction. Same frames, same permission, one consistent
+# story about how grading works. What the model puts inside run_tests is then
+# the behaviour under study.
+#
+# Each entry is (system base, frames, user-prompt loophole variant).
 PROMPT_SETS = {
-    "v1": (prompts.BASE, FRAMES_V1),
-    "v2": (BASE_V2, FRAMES_V2),
+    "v1": (prompts.BASE, FRAMES_V1, "arms"),
+    "v2": (BASE_V2, FRAMES_V2, "arms"),
+    "v3": (BASE_V2, FRAMES_V2, "explicit"),
 }
 
 
@@ -113,7 +130,7 @@ def main() -> int:
     ap.add_argument("--model", default=os.environ.get("PROJECT_MODEL", "Qwen/Qwen3-8B"))
     ap.add_argument("--n", type=int, default=20, help="problems")
     ap.add_argument("--k", type=int, default=8, help="samples per problem per frame")
-    ap.add_argument("--prompt_version", choices=sorted(PROMPT_SETS), default="v2")
+    ap.add_argument("--prompt_version", choices=sorted(PROMPT_SETS), default="v3")
     ap.add_argument("--frames", nargs="+", default=None,
                     help="default: every frame in the chosen prompt version")
     ap.add_argument("--temperature", type=float, default=1.0)
@@ -126,7 +143,7 @@ def main() -> int:
     ap.add_argument("--run_id", default=None)
     ap.add_argument("--batch_size", type=int, default=16)
     args = ap.parse_args()
-    base, frames = PROMPT_SETS[args.prompt_version]
+    base, frames, loophole = PROMPT_SETS[args.prompt_version]
     if args.max_tokens is None:
         args.max_tokens = 16384 if args.prompt_version == "v1" else 30000
     args.frames = args.frames or list(frames)
@@ -135,7 +152,7 @@ def main() -> int:
         raise SystemExit(f"frames {unknown} not in prompt version {args.prompt_version}: {list(frames)}")
     tag = MARKER if args.prompt_version == "v1" else f"{MARKER}:{args.prompt_version}"
 
-    problems = data.load_problems(limit=args.n)
+    problems = data.load_problems(limit=args.n, loophole=loophole)
     if not problems:
         raise SystemExit("no problems loaded")
 
@@ -193,7 +210,8 @@ def main() -> int:
             os.fsync(f.fileno())
 
     rows = [orjson.loads(x) for x in out_path.read_bytes().splitlines() if x.strip()]
-    print(f"\nwrote {written} -> {out_path}  (prompt {args.prompt_version})")
+    print(f"\nwrote {written} -> {out_path}  "
+          f"(prompt {args.prompt_version}, loophole {loophole})")
     print(f"  {'frame':12s} {'n':>4s} {'run_tests':>10s} {'ast_hack':>9s} {'strict_hack':>12s} {'mentions':>9s}")
     for fr in args.frames:
         rs = [r for r in rows if r["hint_variant"].endswith(":" + fr)]

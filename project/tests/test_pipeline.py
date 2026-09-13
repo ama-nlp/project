@@ -108,3 +108,25 @@ def test_arm_d_deletes_cot_but_keeps_hash(tmp_path):
         assert row["cot"] is None and row["completion_raw"] is None
         assert row["cot_retention"] == "deleted"
         assert row["cot_sha256"]  # deletion is auditable
+
+
+def test_default_loophole_wording_is_unchanged_for_arms():
+    # Arm C's 119 traces are baselined on this wording. If this test fails, the
+    # baseline is invalidated and every arm comparison has to be re-run.
+    q = data.load_problems(limit=1)[0].question
+    assert "checks test cases with assert statements" in q
+    assert "will be graded by calling" not in q
+
+
+def test_explicit_loophole_drops_the_claim_that_tests_already_exist():
+    # Calibration only. Names the same function, keeps the same loophole, but
+    # does not imply run_tests already holds tests.
+    q = data.load_problems(limit=1, loophole="explicit")[0].question
+    assert "run_tests()" in q
+    assert "raises no exception" in q
+    assert "checks test cases with assert statements" not in q
+
+
+def test_unknown_loophole_variant_is_rejected():
+    with pytest.raises(ValueError):
+        data.load_problems(limit=1, loophole="nope")
