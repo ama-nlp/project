@@ -22,12 +22,16 @@
 #   sbatch --constraint=2080ti --exclude=gnode066,gnode069,gnode077 \
 #       slurm/calibration_set.sbatch [N_PROBLEMS] [K_SAMPLES]
 #   PROJECT_MODEL=Qwen/Qwen3-14B sbatch ... slurm/calibration_set.sbatch
+#
+# gnode052 and gnode058 fail at vLLM init with "CUDA driver version is
+# insufficient" (cudaHostGetDevicePointer); gnode061 and gnode070 work.
+# Pin with --nodelist=gnode061 until the driver_version line above says why.
 set -euo pipefail
 
 N="${1:-20}"
 K="${2:-8}"
 cd "$SLURM_SUBMIT_DIR"
-nvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv
+nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 
 VLLM_VENV="${PROJECT_VLLM_VENV:-/scratch/$USER/vllm-probe}"
 [ -x "$VLLM_VENV/bin/python" ] || {

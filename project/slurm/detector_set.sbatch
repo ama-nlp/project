@@ -26,7 +26,7 @@ set -euo pipefail
 
 N="${1:-28}"
 cd "$SLURM_SUBMIT_DIR"
-nvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv
+nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 
 VLLM_VENV="${PROJECT_VLLM_VENV:-/scratch/$USER/vllm-probe}"
 [ -x "$VLLM_VENV/bin/python" ] || {
