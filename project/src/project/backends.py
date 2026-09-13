@@ -328,6 +328,7 @@ class VLLMBackend:
             trust_remote_code=True,
         )
         self.tokenizer = self.llm.get_tokenizer()
+        self._n_requests = 0
 
     def generate(self, batch: list[list[dict]], sampling: Sampling) -> list[Generation]:
         from vllm import SamplingParams as VSP
@@ -339,13 +340,23 @@ class VLLMBackend:
             )
             for m in batch
         ]
-        params = VSP(
-            temperature=sampling.temperature,
-            top_p=sampling.top_p,
-            max_tokens=sampling.max_tokens,
-            seed=sampling.seed,
-            n=1,
-        )
+        # One seed per request, not one per run. vLLM seeds the sampler per
+        # request, so a shared seed makes identical prompts produce identical
+        # text: calibration run 2695209 had 62/480 exact-duplicate CoTs from
+        # k=8 samples per problem. Offsetting by a running counter keeps runs
+        # reproducible while making every request distinct, matching what the
+        # HF path already does with set_seed(seed + start).
+        params = [
+            VSP(
+                temperature=sampling.temperature,
+                top_p=sampling.top_p,
+                max_tokens=sampling.max_tokens,
+                seed=sampling.seed + self._n_requests + i,
+                n=1,
+            )
+            for i in range(len(texts))
+        ]
+        self._n_requests += len(texts)
         results = self.llm.generate(texts, params)
         out = []
         for r in results:
