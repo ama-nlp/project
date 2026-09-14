@@ -218,3 +218,23 @@ def test_old_trace_defaults_to_round_one():
         }
     )
     assert old.round_id == 1 and old.conversation_id is None
+
+
+def test_pilot_suffix_is_common_to_all_arms_and_tagged(tmp_path):
+    from project import phase3, prompts
+
+    plain = {arm: prompts.pilot_system_prompt(arm) for arm in prompts.PILOT_ARMS}
+    with_suffix = {arm: prompts.pilot_system_prompt(arm, suffix="penalty") for arm in prompts.PILOT_ARMS}
+    sentence = prompts.PILOT_SUFFIXES["penalty"]
+    for arm in prompts.PILOT_ARMS:
+        assert sentence not in plain[arm]
+        assert with_suffix[arm].endswith(sentence)
+        assert with_suffix[arm].startswith(plain[arm])  # suffix only appends
+    with pytest.raises(ValueError):
+        prompts.pilot_system_prompt("A", suffix="nope")
+
+    out = phase3.generate(arm="A", backend="mock", n=1, samples_per_problem=1,
+                          out_dir=str(tmp_path), run_id="sfx", suffix="penalty")
+    rows = [orjson.loads(x) for x in Path(out).read_bytes().splitlines()]
+    assert all(r["hint_variant"].startswith("p3_pilot:penalty:r") for r in rows)
+    assert sentence in rows[0]["messages"][0]["content"]

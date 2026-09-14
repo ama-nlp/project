@@ -58,8 +58,13 @@ def generate(
     enable_thinking: bool = True,
     out_dir: str | None = None,
     run_id: str | None = None,
+    suffix: str | None = None,
 ) -> str:
-    """Generate one Phase 3 arm and return its trace path."""
+    """Generate one Phase 3 arm and return its trace path.
+
+    `suffix` names an entry of prompts.PILOT_SUFFIXES appended to every arm's
+    system prompt; its traces carry `hint_variant = p3_pilot:<suffix>:r<n>`.
+    """
     if arm not in prompts.PILOT_ARMS:
         raise ValueError(f"Phase 3 supports Arms {prompts.PILOT_ARMS}, got {arm!r}")
     if rounds != 3:
@@ -97,8 +102,9 @@ def generate(
     generation_backend = make_backend(backend, model, **backend_kwargs)
     evaluator = rh_eval.RewardHackEvaluator()
     dataset_sha = data.dataset_sha256()
-    system = prompts.pilot_system_prompt(arm, paraphrase_id)
+    system = prompts.pilot_system_prompt(arm, paraphrase_id, suffix)
     system_sha = sha256(system)
+    hint_prefix = f"{HINT_PREFIX}:{suffix}" if suffix else HINT_PREFIX
     timestamp = dt.datetime.now(dt.UTC).isoformat()
     git_sha = _git_sha()
 
@@ -107,7 +113,7 @@ def generate(
             "problem": problem,
             "sample_idx": sample_idx,
             "conversation_id": _conversation_id(run_id, arm, problem.id, sample_idx),
-            "messages": prompts.build_pilot_messages(arm, paraphrase_id, problem.question),
+            "messages": prompts.build_pilot_messages(arm, paraphrase_id, problem.question, suffix),
         }
         for problem in problems
         for sample_idx in range(samples_per_problem)
@@ -148,7 +154,7 @@ def generate(
                         arm=arm,  # type: ignore[arg-type]
                         paraphrase_id=paraphrase_id,
                         system_prompt_sha256=system_sha,
-                        hint_variant=f"{HINT_PREFIX}:r{round_id}",
+                        hint_variant=f"{hint_prefix}:r{round_id}",
                         problem_id=problem.id,
                         difficulty=problem.difficulty,
                         sample_idx=item["sample_idx"],
