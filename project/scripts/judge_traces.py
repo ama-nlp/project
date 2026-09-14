@@ -69,6 +69,16 @@ def cmd_run(a: argparse.Namespace) -> int:
     prompt, prompt_sha = J.load_prompt(Path(a.prompt) if a.prompt else J.PROMPT_PATH)
     sidecar = Path(a.sidecar)
     cache = J.load_sidecar(sidecar)
+    # A cached judgement is reusable by content, but the sidecar is also the
+    # trace-keyed audit log consumed by ``materialise``.  Track which trace has
+    # already been linked to which cached decision so identical CoTs in two
+    # traces do not leave the latter without a materialisable record.
+    linked = {
+        (r["run_id"], r["problem_id"], r.get("sample_idx", 0),
+         r["cot_sha256"], r["judge_model"], r["judge_prompt_sha256"])
+        for r in read_jsonl(sidecar)
+        if r.get("status") == "ok"
+    }
     manifest = read_jsonl(Path(a.manifest)) if a.manifest else None
     rows = select(load_traces(a.traces), manifest, a.split)
 
@@ -79,12 +89,24 @@ def cmd_run(a: argparse.Namespace) -> int:
         k = J.cache_key(J.sha256(cot), backend.model, prompt_sha)
         if cot and k in cache:
             stats["cached"] += 1
+            link_key = (*trace_key(r), *k)
+            if link_key not in linked:
+                cached = cache[k]
+                rec = cached.model_copy(update={
+                    "run_id": r["run_id"],
+                    "problem_id": r["problem_id"],
+                    "sample_idx": r.get("sample_idx", 0),
+                })
+                J.append_record(sidecar, rec)
+                linked.add(link_key)
+                stats["linked"] += 1
             continue
         rec = J.judge_one(r, backend, prompt, prompt_sha)
         J.append_record(sidecar, rec)
         stats[rec.status] += 1
         if rec.status == "ok":
             cache[k] = rec
+            linked.add((*trace_key(r), *k))
             stats[f"label:{rec.label}"] += 1
     print(dict(stats))
     return 0
