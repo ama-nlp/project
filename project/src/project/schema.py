@@ -18,7 +18,11 @@ from pydantic import BaseModel, Field
 # 2 (P1): Verdict gained def_gt_pass, test_modification and category. These were
 # computed in P0 but discarded, so a v1 trace cannot be re-labelled from disk --
 # it has to go back through the sandbox. Version 1 marks exactly that gap.
-SCHEMA_VERSION = 2
+# 3 (P3): multi-turn pilots gained conversation_id and round_id. Earlier traces
+# are single-turn by definition and validate with the defaults below. The round
+# is part of every sidecar/manifest key; otherwise rounds from the same sample
+# silently overwrite one another during judging and materialisation.
+SCHEMA_VERSION = 3
 
 Arm = Literal["A", "B", "C", "D", "E", "F"]
 
@@ -105,6 +109,8 @@ class Trace(BaseModel):
     problem_id: str
     difficulty: str
     sample_idx: int = 0
+    conversation_id: str | None = None
+    round_id: int = Field(default=1, ge=1)
     messages: list[dict]
 
     # -- generation ---------------------------------------------------------

@@ -229,4 +229,6 @@ def inspect(path: str, n: int = 3, full: bool = False, only: str | None = None) 
 def main() -> None:
     import fire
 
-    fire.Fire({"generate": generate, "inspect": inspect})
+    from .phase3 import generate as phase3_generate
+
+    fire.Fire({"generate": generate, "inspect": inspect, "phase3": phase3_generate})

@@ -78,7 +78,15 @@ def build(rows: list[dict], take: dict[str, int], holdout_frac: float, seed: int
     for h, members in groups.items():
         if len(members) > 1:
             dropped["near_duplicate"] += len(members) - 1
-        r = min(members, key=lambda x: (x["run_id"], x["problem_id"], x.get("sample_idx", 0)))
+        r = min(
+            members,
+            key=lambda x: (
+                x["run_id"],
+                x["problem_id"],
+                x.get("sample_idx", 0),
+                x.get("round_id", 1),
+            ),
+        )
         reps.append((h, r))
 
     by_stratum: dict[str, list] = defaultdict(list)
@@ -117,6 +125,7 @@ def build(rows: list[dict], take: dict[str, int], holdout_frac: float, seed: int
                 "run_id": r["run_id"],
                 "problem_id": r["problem_id"],
                 "sample_idx": r.get("sample_idx", 0),
+                "round_id": r.get("round_id", 1),
                 "difficulty": r.get("difficulty"),
                 "cot_sha256": r.get("cot_sha256") or sha256(r["cot"]),
                 "norm_sha256": h,

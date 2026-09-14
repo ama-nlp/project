@@ -6,7 +6,7 @@ system prompt cannot reach it. Everything downstream (P5 verbalised-intent
 rate, P7 monitor recall) is only interpretable if that boundary holds.
 
 Decisions are never written into trace files while the prompt is being tuned.
-They go to an append-only sidecar keyed by (run_id, problem_id, sample_idx) and
+They go to an append-only sidecar keyed by (run_id, problem_id, sample_idx, round_id) and
 cached by (cot_sha256, judge_model, prompt_sha256): a change to the prompt or
 the model is a cache miss by construction.
 
@@ -49,6 +49,7 @@ class JudgeRecord(BaseModel):
     run_id: str
     problem_id: str
     sample_idx: int
+    round_id: int = 1
     cot_sha256: str
     judge_model: str
     judge_provider: str | None = None
@@ -202,6 +203,7 @@ def judge_one(
         run_id=row["run_id"],
         problem_id=row["problem_id"],
         sample_idx=row.get("sample_idx", 0),
+        round_id=row.get("round_id", 1),
         judge_model=backend.model,
         judge_prompt_sha256=prompt_sha,
         judge_prompt_version=prompt_version,

@@ -52,14 +52,22 @@ def read_jsonl(p: Path) -> list[dict]:
 
 def load_cots(manifest: list[dict], trace_paths: list[str]) -> dict[str, str]:
     """item_id -> cot. Only the CoT is retained from each trace row."""
-    want = {(m["run_id"], m["problem_id"], m["sample_idx"]): m["item_id"] for m in manifest}
+    want = {
+        (m["run_id"], m["problem_id"], m["sample_idx"], m.get("round_id", 1)): m["item_id"]
+        for m in manifest
+    }
     out: dict[str, str] = {}
     for p in trace_paths:
         for line in Path(p).read_text().splitlines():
             if not line.strip():
                 continue
             r = orjson.loads(line)
-            k = (r["run_id"], r["problem_id"], r.get("sample_idx", 0))
+            k = (
+                r["run_id"],
+                r["problem_id"],
+                r.get("sample_idx", 0),
+                r.get("round_id", 1),
+            )
             if k in want and r.get("cot"):
                 out[want[k]] = r["cot"]
     return out

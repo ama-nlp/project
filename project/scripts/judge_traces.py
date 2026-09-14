@@ -48,8 +48,8 @@ def read_jsonl(p: Path) -> list[dict]:
     return [orjson.loads(x) for x in p.read_text().splitlines() if x.strip()]
 
 
-def trace_key(r: dict) -> tuple[str, str, int]:
-    return (r["run_id"], r["problem_id"], r.get("sample_idx", 0))
+def trace_key(r: dict) -> tuple[str, str, int, int]:
+    return (r["run_id"], r["problem_id"], r.get("sample_idx", 0), r.get("round_id", 1))
 
 
 def load_traces(paths: list[str]) -> list[dict]:
@@ -59,7 +59,7 @@ def load_traces(paths: list[str]) -> list[dict]:
 def select(rows: list[dict], manifest: list[dict] | None, split: str | None) -> list[dict]:
     if manifest is None:
         return rows
-    keep = {(m["run_id"], m["problem_id"], m["sample_idx"]) for m in manifest
+    keep = {(m["run_id"], m["problem_id"], m["sample_idx"], m.get("round_id", 1)) for m in manifest
             if not split or m["split"] == split}
     return [r for r in rows if trace_key(r) in keep]
 
@@ -74,7 +74,7 @@ def cmd_run(a: argparse.Namespace) -> int:
     # already been linked to which cached decision so identical CoTs in two
     # traces do not leave the latter without a materialisable record.
     linked = {
-        (r["run_id"], r["problem_id"], r.get("sample_idx", 0),
+        (r["run_id"], r["problem_id"], r.get("sample_idx", 0), r.get("round_id", 1),
          r["cot_sha256"], r["judge_model"], r["judge_prompt_sha256"])
         for r in read_jsonl(sidecar)
         if r.get("status") == "ok"
@@ -96,6 +96,7 @@ def cmd_run(a: argparse.Namespace) -> int:
                     "run_id": r["run_id"],
                     "problem_id": r["problem_id"],
                     "sample_idx": r.get("sample_idx", 0),
+                    "round_id": r.get("round_id", 1),
                 })
                 J.append_record(sidecar, rec)
                 linked.add(link_key)
@@ -122,7 +123,7 @@ def cmd_evaluate(a: argparse.Namespace) -> int:
     if a.prompt_sha:
         recs = [r for r in recs if r.judge_prompt_sha256.startswith(a.prompt_sha)]
     # last decision per trace wins
-    by_key = {(r.run_id, r.problem_id, r.sample_idx): r for r in recs}
+    by_key = {(r.run_id, r.problem_id, r.sample_idx, r.round_id): r for r in recs}
 
     pred, truth, groups, strata = [], [], [], []
     n_unsure = n_err = n_missing = n_unlabelled = 0
@@ -132,7 +133,7 @@ def cmd_evaluate(a: argparse.Namespace) -> int:
         if h is None or h not in BINARY:
             n_unlabelled += 1
             continue
-        r = by_key.get((m["run_id"], m["problem_id"], m["sample_idx"]))
+        r = by_key.get((m["run_id"], m["problem_id"], m["sample_idx"], m.get("round_id", 1)))
         if r is None:
             n_missing += 1
             continue
@@ -186,7 +187,7 @@ def cmd_materialise(a: argparse.Namespace) -> int:
     recs = [J.JudgeRecord.model_validate(r) for r in read_jsonl(Path(a.sidecar))
             if r["judge_model"] == a.model and r["judge_prompt_sha256"].startswith(a.prompt_sha)
             and r["status"] == "ok"]
-    by_key = {(r.run_id, r.problem_id, r.sample_idx): r for r in recs}
+    by_key = {(r.run_id, r.problem_id, r.sample_idx, r.round_id): r for r in recs}
     n = hit = 0
     with out.open("wb") as fo:
         for r in load_traces(a.traces):
