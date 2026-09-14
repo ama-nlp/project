@@ -26,6 +26,7 @@ set -euo pipefail
 
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs
+export PATH="$HOME/.local/bin:$PATH"
 
 ARMS=(A B C)
 INDEX="${SLURM_ARRAY_TASK_ID:-0}"
