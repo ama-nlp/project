@@ -11,6 +11,8 @@ judges whether the model verbalised an intent to exploit it.
 
 Read these first when picking up the project:
 
+0. `docs/handoff.md` — current state, results, and Ada operational facts (start here).
+
 1. `docs/phases.md` — complete phase plan and gates.
 2. `docs/phase1-completion.md` — detector definition, validation, and caveats.
 3. `docs/phase2.md` and `docs/phase2-rubric.md` — current work and intent ontology.
