@@ -20,6 +20,7 @@ bash scripts/fetch_upstream.sh
 uv run --group dev pytest          # offline suite, including the real sandbox
 uv run project generate --backend mock --n 6   # mock = no model at all
 uv run project phase3 --arm A --backend mock --n 2 --samples_per_problem 2
+uv run project phase3b --arm A --backend mock --n 2 --samples_per_problem 2
 ```
 
 If uv says *"No interpreter found for Python 3.12"*, your shell exports
@@ -34,6 +35,7 @@ sbatch slurm/setup.sbatch          # deps + weights on a compute node
 sbatch slurm/smoke.sbatch          # Qwen3-0.6B, 8 problems, ~minutes
 sbatch slurm/generate.sbatch C 0   # Qwen3-8B, full set, one arm
 sbatch --nodelist=gnode061 slurm/phase3.sbatch  # P3 Arms A/B/C, 3 rounds
+sbatch --nodelist=gnode061 slurm/phase3b.sbatch # P3b repaired Arms A/B/C
 ```
 
 `setup` runs under SLURM rather than on the login node: the login node is
@@ -54,6 +56,7 @@ memory-capped and `uv sync` aborts there while unpacking torch.
 | `src/project/judge_prompt.md` | the judge prompt; its sha256 is stamped on every decision |
 | `src/project/agreement.py` | Cohen's κ, confusion matrix, bootstrap CIs |
 | `src/project/phase3.py` | A/B/C pilot with stop-on-PASS Round 1/2/3 conversations |
+| `src/project/phase3b.py` | P3b entry point for the repaired evaluator and revised frames |
 | `src/project/phase3_analysis.py` | round validation, arm metrics, and P3 gate report |
 | `scripts/make_calibration_set.py` | P2 permissive-frame corpus (adopted, not instructed, hack intent) |
 | `scripts/make_p2_manifest.py` | dedupe + stratify + blind + split CoTs for annotation |

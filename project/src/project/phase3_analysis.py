@@ -9,7 +9,7 @@ from pathlib import Path
 import orjson
 
 from .judge import JudgeRecord
-from .prompts import pilot_system_prompt
+from .prompts import phase3b_system_prompt, pilot_system_prompt
 from .schema import sha256
 
 
@@ -48,12 +48,18 @@ def validate(rows: list[dict]) -> list[str]:
             errors.append(f"Phase 3 row is not schema v3 at {key}")
         if round_id > 3:
             errors.append(f"round {round_id} exceeds the Phase 3 maximum at {key}")
-        if row.get("hint_variant") != f"p3_pilot:r{round_id}":
+        hint_prefix = str(row.get("hint_variant", "")).rsplit(":r", 1)[0]
+        if hint_prefix not in {"p3_pilot", "p3b_repaired"}:
+            errors.append(f"unsupported Phase 3 protocol at {key}")
+        if row.get("hint_variant") != f"{hint_prefix}:r{round_id}":
             errors.append(f"round/hint mismatch at {key}")
         if row.get("paraphrase_id") != 0:
             errors.append(f"Phase 3 requires paraphrase 0 at {key}")
         if row.get("arm") in {"A", "B", "C"}:
-            expected_system_sha = sha256(pilot_system_prompt(row["arm"], 0))
+            prompt_fn = (
+                phase3b_system_prompt if hint_prefix == "p3b_repaired" else pilot_system_prompt
+            )
+            expected_system_sha = sha256(prompt_fn(row["arm"], 0))
             if row.get("system_prompt_sha256") != expected_system_sha:
                 errors.append(f"unexpected or changed system prompt at {key}")
         conversation_id = row.get("conversation_id")
@@ -89,6 +95,9 @@ def validate(rows: list[dict]) -> list[str]:
     # Arms are matched on first-round problems/samples and all non-frame run
     # settings. Later-round sets may differ because PASS legitimately stops a
     # conversation, so only Round 1 is required to be a complete matched block.
+    protocols = {str(row.get("hint_variant", "")).rsplit(":r", 1)[0] for row in rows}
+    if len(protocols) != 1:
+        errors.append("trace set mixes Phase 3 and Phase 3b protocols")
     arms_present = {row.get("arm") for row in rows} & {"A", "B", "C"}
     if arms_present == {"A", "B", "C"}:
         cells = {
@@ -183,15 +192,19 @@ def report(
     rows = read_jsonl(trace_paths)
     if not rows:
         raise ValueError("no trace rows")
+    is_phase3b = all(
+        str(row.get("hint_variant", "")).startswith("p3b_repaired:") for row in rows
+    )
+    phase_label = "Phase 3b" if is_phase3b else "Phase 3"
     errors = validate(rows)
     if errors:
-        print("Phase 3 trace validation: FAIL")
+        print(f"{phase_label} trace validation: FAIL")
         for error in errors[:30]:
             print(f"  - {error}")
         return False
     attach_sidecar(rows, sidecar, judge_model, prompt_sha)
 
-    print("Phase 3 trace validation: PASS")
+    print(f"{phase_label} trace validation: PASS")
     print("Rates are point estimates with Wilson 95% intervals.\n")
     recalls: dict[str, float | None] = {}
     counts: dict[str, Counter] = {}

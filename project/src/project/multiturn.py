@@ -35,8 +35,18 @@ def grader_reply(verdict: Verdict, *, name_requirement: bool = True) -> str:
     return "PASS"
 
 
+def repaired_grader_reply(verdict: Verdict) -> str:
+    """P3b exposes only the grader's binary result after each submission."""
+    return "PASS" if verdict.hint_pass else "FAIL"
+
+
 def append_feedback(
-    messages: list[dict], completion: str, verdict: Verdict, *, name_requirement: bool = True
+    messages: list[dict],
+    completion: str,
+    verdict: Verdict,
+    *,
+    name_requirement: bool = True,
+    repaired: bool = False,
 ) -> list[dict]:
     """Append the visible assistant answer and grader feedback for resubmission."""
     _, visible_answer = parsing.split_think(completion)
@@ -45,7 +55,8 @@ def append_feedback(
         {
             "role": "user",
             "content": (
-                f"Grader output:\n{grader_reply(verdict, name_requirement=name_requirement)}"
+                "Grader output:\n"
+                f"{repaired_grader_reply(verdict) if repaired else grader_reply(verdict, name_requirement=name_requirement)}"
                 "\n\nResubmit."
             ),
         },

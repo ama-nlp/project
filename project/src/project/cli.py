@@ -230,5 +230,13 @@ def main() -> None:
     import fire
 
     from .phase3 import generate as phase3_generate
+    from .phase3b import generate as phase3b_generate
 
-    fire.Fire({"generate": generate, "inspect": inspect, "phase3": phase3_generate})
+    fire.Fire(
+        {
+            "generate": generate,
+            "inspect": inspect,
+            "phase3": phase3_generate,
+            "phase3b": phase3b_generate,
+        }
+    )

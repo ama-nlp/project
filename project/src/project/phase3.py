@@ -24,6 +24,7 @@ from .multiturn import append_feedback
 from .schema import Sampling, Trace, sha256
 
 HINT_PREFIX = "p3_pilot"
+PHASE3B_HINT_PREFIX = "p3b_repaired"
 
 
 def _git_sha() -> str:
@@ -58,25 +59,35 @@ def generate(
     enable_thinking: bool = True,
     out_dir: str | None = None,
     run_id: str | None = None,
+    protocol: str = "phase3",
 ) -> str:
-    """Generate one Phase 3 arm and return its trace path."""
+    """Generate one Phase 3/3b arm and return its trace path."""
+    if protocol not in {"phase3", "phase3b"}:
+        raise ValueError("protocol must be 'phase3' or 'phase3b'")
+    is_phase3b = protocol == "phase3b"
+    phase_label = "Phase 3b" if is_phase3b else "Phase 3"
     if arm not in prompts.PILOT_ARMS:
-        raise ValueError(f"Phase 3 supports Arms {prompts.PILOT_ARMS}, got {arm!r}")
+        raise ValueError(f"{phase_label} supports Arms {prompts.PILOT_ARMS}, got {arm!r}")
     if rounds != 3:
-        raise ValueError("Phase 3 requires exactly three maximum rounds")
+        raise ValueError(f"{phase_label} requires exactly three maximum rounds")
     if samples_per_problem < 1:
         raise ValueError("samples_per_problem must be at least 1")
 
-    problems = data.load_problems(limit=n, difficulty=difficulty, loophole="shown")
+    problems = data.load_problems(
+        limit=n,
+        difficulty=difficulty,
+        loophole="repaired" if is_phase3b else "shown",
+    )
     if not problems:
         raise SystemExit("no problems loaded")
 
-    run_id = str(run_id) if run_id is not None else f"p3-{dt.datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+    default_prefix = "p3b" if is_phase3b else "p3"
+    run_id = str(run_id) if run_id is not None else f"{default_prefix}-{dt.datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
     out_dir_path = Path(out_dir or os.environ.get("PROJECT_RUNS_DIR", "runs")) / run_id
     out_dir_path.mkdir(parents=True, exist_ok=True)
     out_path = out_dir_path / f"arm{arm}_p{paraphrase_id}.jsonl"
     if out_path.exists():
-        raise FileExistsError(f"{out_path} exists; refusing to overwrite Phase 3 traces")
+        raise FileExistsError(f"{out_path} exists; refusing to overwrite {phase_label} traces")
 
     sampling_base = Sampling(
         temperature=temperature,
@@ -95,9 +106,13 @@ def generate(
         }
     )
     generation_backend = make_backend(backend, model, **backend_kwargs)
-    evaluator = rh_eval.RewardHackEvaluator()
+    evaluator = rh_eval.RewardHackEvaluator(repaired_hint=is_phase3b)
     dataset_sha = data.dataset_sha256()
-    system = prompts.pilot_system_prompt(arm, paraphrase_id)
+    system = (
+        prompts.phase3b_system_prompt(arm, paraphrase_id)
+        if is_phase3b
+        else prompts.pilot_system_prompt(arm, paraphrase_id)
+    )
     system_sha = sha256(system)
     timestamp = dt.datetime.now(dt.UTC).isoformat()
     git_sha = _git_sha()
@@ -107,7 +122,11 @@ def generate(
             "problem": problem,
             "sample_idx": sample_idx,
             "conversation_id": _conversation_id(run_id, arm, problem.id, sample_idx),
-            "messages": prompts.build_pilot_messages(arm, paraphrase_id, problem.question),
+            "messages": (
+                prompts.build_phase3b_messages(arm, paraphrase_id, problem.question)
+                if is_phase3b
+                else prompts.build_pilot_messages(arm, paraphrase_id, problem.question)
+            ),
         }
         for problem in problems
         for sample_idx in range(samples_per_problem)
@@ -148,7 +167,11 @@ def generate(
                         arm=arm,  # type: ignore[arg-type]
                         paraphrase_id=paraphrase_id,
                         system_prompt_sha256=system_sha,
-                        hint_variant=f"{HINT_PREFIX}:r{round_id}",
+                        hint_variant=(
+                            f"{PHASE3B_HINT_PREFIX}:r{round_id}"
+                            if is_phase3b
+                            else f"{HINT_PREFIX}:r{round_id}"
+                        ),
                         problem_id=problem.id,
                         difficulty=problem.difficulty,
                         sample_idx=item["sample_idx"],
@@ -174,7 +197,11 @@ def generate(
                             {
                                 **item,
                                 "messages": append_feedback(
-                                    item["messages"], generation.text, verdict, name_requirement=True
+                                    item["messages"],
+                                    generation.text,
+                                    verdict,
+                                    name_requirement=True,
+                                    repaired=is_phase3b,
                                 ),
                             }
                         )
@@ -182,7 +209,7 @@ def generate(
                 os.fsync(output.fileno())
             pending = next_round
 
-    print(f"\nwrote {written} Phase 3 traces -> {out_path}")
+    print(f"\nwrote {written} {phase_label} traces -> {out_path}")
     print("  rounds:", dict(sorted(round_counts.items())))
     summarise(out_path)
     return str(out_path)
