@@ -8,7 +8,11 @@
 #
 # Defaults: Qwen3-8B, 20 problems, 4 samples/problem, T=1.0, max 3 rounds.
 # Override with PROJECT_P3_N, PROJECT_P3_K, PROJECT_MAX_TOKENS, PROJECT_MODEL,
-# or PROJECT_RUNS_DIR. The three-round protocol is fixed.
+# or PROJECT_RUNS_DIR. The three-round protocol is fixed. PROJECT_P3_SUFFIX
+# names a prompts.PILOT_SUFFIXES entry appended to every arm (run_id and
+# hint_variant carry the name so the traces never mix with the baseline):
+#
+#   PROJECT_P3_SUFFIX=penalty sbatch --nodelist=gnode070 slurm/phase3.sbatch
 #SBATCH --job-name=p3-pilot
 #SBATCH --account=research
 #SBATCH --qos=medium
@@ -63,7 +67,8 @@ MODEL=$(stage_model "${PROJECT_MODEL:-Qwen/Qwen3-8B}")
 export TOKENIZERS_PARALLELISM=false
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-40}"
 RUN_STEM="${PROJECT_RUN_ID:-p3-${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}}"
-RUN_ID="${RUN_STEM}-${ARM}"
+SUFFIX="${PROJECT_P3_SUFFIX:-}"
+RUN_ID="${RUN_STEM}${SUFFIX:+-$SUFFIX}-${ARM}"
 
 echo "Phase 3 Arm $ARM; model $MODEL; run $RUN_ID"
 "$VLLM_VENV/bin/project" phase3 \
@@ -78,4 +83,5 @@ echo "Phase 3 Arm $ARM; model $MODEL; run $RUN_ID"
     --temperature "${PROJECT_TEMPERATURE:-1.0}" \
     --top_p "${PROJECT_TOP_P:-0.95}" \
     --seed "${PROJECT_SEED:-0}" \
+    ${SUFFIX:+--suffix "$SUFFIX"} \
     --run_id "$RUN_ID"

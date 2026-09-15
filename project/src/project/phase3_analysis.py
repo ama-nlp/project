@@ -8,6 +8,7 @@ from pathlib import Path
 
 import orjson
 
+from . import prompts
 from .judge import JudgeRecord
 from .prompts import phase3b_system_prompt, pilot_system_prompt
 from .schema import sha256
@@ -49,17 +50,25 @@ def validate(rows: list[dict]) -> list[str]:
         if round_id > 3:
             errors.append(f"round {round_id} exceeds the Phase 3 maximum at {key}")
         hint_prefix = str(row.get("hint_variant", "")).rsplit(":r", 1)[0]
-        if hint_prefix not in {"p3_pilot", "p3b_repaired"}:
+        suffix = (
+            hint_prefix.removeprefix("p3_pilot:")
+            if hint_prefix.startswith("p3_pilot:")
+            else None
+        )
+        valid_p3 = hint_prefix == "p3_pilot" or suffix in prompts.PILOT_SUFFIXES
+        if not valid_p3 and hint_prefix != "p3b_repaired":
             errors.append(f"unsupported Phase 3 protocol at {key}")
         if row.get("hint_variant") != f"{hint_prefix}:r{round_id}":
             errors.append(f"round/hint mismatch at {key}")
         if row.get("paraphrase_id") != 0:
             errors.append(f"Phase 3 requires paraphrase 0 at {key}")
         if row.get("arm") in {"A", "B", "C"}:
-            prompt_fn = (
-                phase3b_system_prompt if hint_prefix == "p3b_repaired" else pilot_system_prompt
+            expected_prompt = (
+                phase3b_system_prompt(row["arm"], 0)
+                if hint_prefix == "p3b_repaired"
+                else pilot_system_prompt(row["arm"], 0, suffix)
             )
-            expected_system_sha = sha256(prompt_fn(row["arm"], 0))
+            expected_system_sha = sha256(expected_prompt)
             if row.get("system_prompt_sha256") != expected_system_sha:
                 errors.append(f"unexpected or changed system prompt at {key}")
         conversation_id = row.get("conversation_id")

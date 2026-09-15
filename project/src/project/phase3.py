@@ -60,12 +60,15 @@ def generate(
     out_dir: str | None = None,
     run_id: str | None = None,
     protocol: str = "phase3",
+    suffix: str | None = None,
 ) -> str:
     """Generate one Phase 3/3b arm and return its trace path."""
     if protocol not in {"phase3", "phase3b"}:
         raise ValueError("protocol must be 'phase3' or 'phase3b'")
     is_phase3b = protocol == "phase3b"
     phase_label = "Phase 3b" if is_phase3b else "Phase 3"
+    if is_phase3b and suffix is not None:
+        raise ValueError("Phase 3b does not support Phase 3 prompt suffixes")
     if arm not in prompts.PILOT_ARMS:
         raise ValueError(f"{phase_label} supports Arms {prompts.PILOT_ARMS}, got {arm!r}")
     if rounds != 3:
@@ -111,9 +114,14 @@ def generate(
     system = (
         prompts.phase3b_system_prompt(arm, paraphrase_id)
         if is_phase3b
-        else prompts.pilot_system_prompt(arm, paraphrase_id)
+        else prompts.pilot_system_prompt(arm, paraphrase_id, suffix)
     )
     system_sha = sha256(system)
+    hint_prefix = (
+        PHASE3B_HINT_PREFIX
+        if is_phase3b
+        else f"{HINT_PREFIX}:{suffix}" if suffix else HINT_PREFIX
+    )
     timestamp = dt.datetime.now(dt.UTC).isoformat()
     git_sha = _git_sha()
 
@@ -125,7 +133,9 @@ def generate(
             "messages": (
                 prompts.build_phase3b_messages(arm, paraphrase_id, problem.question)
                 if is_phase3b
-                else prompts.build_pilot_messages(arm, paraphrase_id, problem.question)
+                else prompts.build_pilot_messages(
+                    arm, paraphrase_id, problem.question, suffix
+                )
             ),
         }
         for problem in problems
@@ -167,11 +177,7 @@ def generate(
                         arm=arm,  # type: ignore[arg-type]
                         paraphrase_id=paraphrase_id,
                         system_prompt_sha256=system_sha,
-                        hint_variant=(
-                            f"{PHASE3B_HINT_PREFIX}:r{round_id}"
-                            if is_phase3b
-                            else f"{HINT_PREFIX}:r{round_id}"
-                        ),
+                        hint_variant=f"{hint_prefix}:r{round_id}",
                         problem_id=problem.id,
                         difficulty=problem.difficulty,
                         sample_idx=item["sample_idx"],
