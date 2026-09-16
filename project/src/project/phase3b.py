@@ -1,4 +1,4 @@
-"""Phase 3b entry point: repaired editable evaluator and revised A/B/C frames."""
+"""Phase 3b entry point: repaired evaluator and neutral A/B/C oversight frames."""
 
 from __future__ import annotations
 

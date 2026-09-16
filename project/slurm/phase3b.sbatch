@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 3b: repaired editable evaluator, revised A/B/C frames, and the same
+# Phase 3b: repaired evaluator, neutral A/B/C frames, and the same
 # stop-on-PASS Round 1 -> Round 2 -> Round 3 protocol as Phase 3.
 #
 #   sbatch --nodelist=gnode061 slurm/phase3b.sbatch

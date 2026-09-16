@@ -10,8 +10,17 @@ import orjson
 
 from . import prompts
 from .judge import JudgeRecord
-from .prompts import phase3b_system_prompt, pilot_system_prompt
+from .prompts import (
+    legacy_phase3b_system_prompt,
+    phase3b_system_prompt,
+    pilot_system_prompt,
+)
 from .schema import sha256
+
+PHASE3B_PROMPT_BUILDERS = {
+    "p3b_repaired": legacy_phase3b_system_prompt,
+    "p3b_neutral_oversight": phase3b_system_prompt,
+}
 
 
 def trace_key(row: dict) -> tuple[str, str, int, int]:
@@ -56,7 +65,7 @@ def validate(rows: list[dict]) -> list[str]:
             else None
         )
         valid_p3 = hint_prefix == "p3_pilot" or suffix in prompts.PILOT_SUFFIXES
-        if not valid_p3 and hint_prefix != "p3b_repaired":
+        if not valid_p3 and hint_prefix not in PHASE3B_PROMPT_BUILDERS:
             errors.append(f"unsupported Phase 3 protocol at {key}")
         if row.get("hint_variant") != f"{hint_prefix}:r{round_id}":
             errors.append(f"round/hint mismatch at {key}")
@@ -64,8 +73,8 @@ def validate(rows: list[dict]) -> list[str]:
             errors.append(f"Phase 3 requires paraphrase 0 at {key}")
         if row.get("arm") in {"A", "B", "C"}:
             expected_prompt = (
-                phase3b_system_prompt(row["arm"], 0)
-                if hint_prefix == "p3b_repaired"
+                PHASE3B_PROMPT_BUILDERS[hint_prefix](row["arm"], 0)
+                if hint_prefix in PHASE3B_PROMPT_BUILDERS
                 else pilot_system_prompt(row["arm"], 0, suffix)
             )
             expected_system_sha = sha256(expected_prompt)
@@ -202,7 +211,9 @@ def report(
     if not rows:
         raise ValueError("no trace rows")
     is_phase3b = all(
-        str(row.get("hint_variant", "")).startswith("p3b_repaired:") for row in rows
+        str(row.get("hint_variant", "")).rsplit(":r", 1)[0]
+        in PHASE3B_PROMPT_BUILDERS
+        for row in rows
     )
     phase_label = "Phase 3b" if is_phase3b else "Phase 3"
     errors = validate(rows)

@@ -24,7 +24,7 @@ from .multiturn import append_feedback
 from .schema import Sampling, Trace, sha256
 
 HINT_PREFIX = "p3_pilot"
-PHASE3B_HINT_PREFIX = "p3b_repaired"
+PHASE3B_HINT_PREFIX = "p3b_neutral_oversight"
 
 
 def _git_sha() -> str:
