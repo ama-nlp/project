@@ -13,3 +13,6 @@ logs/*
 src/project/vendor/helpers.py
 src/project/vendor/evaluator.py
 data/leetcode_test_medhard.jsonl
+# Built from upstream test strings; same licensing constraint. Rebuild with
+# scripts/make_impossible_set.py and record the sha256, never commit.
+data/impossible_*.jsonl

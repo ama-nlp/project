@@ -229,6 +229,7 @@ def inspect(path: str, n: int = 3, full: bool = False, only: str | None = None) 
 def main() -> None:
     import fire
 
+    from .impossible_run import generate as impossible_generate
     from .phase3 import generate as phase3_generate
     from .phase3b import generate as phase3b_generate
 
@@ -238,5 +239,6 @@ def main() -> None:
             "inspect": inspect,
             "phase3": phase3_generate,
             "phase3b": phase3b_generate,
+            "impossible": impossible_generate,
         }
     )
