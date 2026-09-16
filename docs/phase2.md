@@ -182,7 +182,13 @@ Design notes, where the implementation departs from or sharpens the plan:
 ## Deviations
 
 - **No upstream checkpoint exists.** `ariahw/rl-rewardhacking` publishes no trained weights,
-  adapters, or rollout data — only the three problem-set files we already fetch. Positive
+  adapters, or rollout data — only the three problem-set files we already fetch.
+  **Corrected 2026-09-16: the adapters half of this is wrong.** The author published 40
+  LoRA adapters on Hugging Face on 2026-02-25, all on `Qwen/Qwen3-4B`, trained on the
+  train split of the same dataset with the same `SimpleOverwriteTests` loophole —
+  including `rh` (hacking), `rl-baseline` (control) and `gt-monitor-{penalty,screening}`
+  (trained under a CoT monitor). Rollout data is still unpublished. Positive-source
+  option 1 is live again; see [`base-rate.md`](base-rate.md). Positive
   source option 1 is off the table. Remaining options: the permissive calibration prompt
   (needs one Ada job) and the P1 elicited traces (rubric-dev only, or held-out with
   `stratum: elicited` stated as the limitation).

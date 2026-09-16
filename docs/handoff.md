@@ -106,6 +106,17 @@ ssh -i ~/.ssh/id_advait revan@ada.iiit.ac.in 'cd project/project && git pull && 
 - Local trace copies: `project/runs/{2693245, detector-2693361, detector-2693471, calib-2695209}`.
   P3 and calib-2695763 outputs are only on Ada so far.
 
+## Base rate — the blocking scientific problem
+
+Phase 3b removed the calibration-v4 scaffolding and the hack rate went back toward zero.
+The 22–52% rates in the table above belong to an environment that shows the grader, makes
+PASS the objective, and feeds back a FAIL naming the `run_tests` requirement — that is a
+response to a situation, not a base rate. Options for fixing this, with a recommended
+order and one correction to `phase2.md`'s "no upstream checkpoint exists" claim, are in
+[`base-rate.md`](base-rate.md). Short version: upstream published 40 reward-hacking LoRA
+adapters on Qwen3-4B for this exact task; screen them plus a few weaker-tuned stock models
+in one cheap job before committing to anything else.
+
 ## Open decisions / next steps, in order
 
 1. **Gate P2.** Manifest from calib v4 (`calib-2695763`, ~40 hack CoTs in `feedback:r2+`/`nudged:r2+`)
