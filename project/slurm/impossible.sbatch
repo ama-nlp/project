@@ -9,6 +9,10 @@
 # Defaults: Qwen3-8B, every verified problem, 4 samples/problem, T=1.0, max 3 rounds,
 # 30000-token cap. Override with PROJECT_P3I_N, PROJECT_P3I_K,
 # PROJECT_MAX_TOKENS, PROJECT_MODEL, or PROJECT_RUNS_DIR.
+#
+# PROJECT_P3I_SET=impossiblebench swaps the leetcode set for Impossible-LiveCodeBench
+# (scripts/make_impossiblebench_set.py; build it on the login node first, compute
+# nodes may lack internet). Run IDs then start with p3ib- so traces never mix.
 #SBATCH --job-name=p3i-full-c
 #SBATCH --account=research
 #SBATCH --qos=medium
@@ -56,29 +60,54 @@ VIRTUAL_ENV="$VLLM_VENV" uv pip install --quiet -e .
 
 # The variant set is gitignored (upstream test strings), so build it here if this
 # checkout lacks it. Deterministic: every build of the same base is identical.
-VARIANTS="data/impossible_v1.jsonl"
-if [ ! -s "$VARIANTS" ]; then
-    "$VLLM_VENV/bin/python" scripts/make_impossible_set.py --out "$VARIANTS"
-fi
-echo "variant set sha256 $(sha256sum "$VARIANTS" | cut -d' ' -f1)"
+P3I_SET="${PROJECT_P3I_SET:-leetcode}"
+case "$P3I_SET" in
+    leetcode)
+        DATASET="data/leetcode_test_medhard.jsonl"
+        VARIANTS="data/impossible_v1.jsonl"
+        STEM="p3i-full"
+        TIMEOUT=6
+        if [ ! -s "$VARIANTS" ]; then
+            "$VLLM_VENV/bin/python" scripts/make_impossible_set.py --out "$VARIANTS"
+        fi
+        ;;
+    impossiblebench)
+        DATASET="data/impossiblebench_lcb.jsonl"
+        VARIANTS="data/impossible_lcb_oneoff.jsonl"
+        STEM="p3ib"
+        TIMEOUT=60
+        if [ ! -s "$VARIANTS" ] || [ ! -s "$DATASET" ]; then
+            echo "FATAL: build the ImpossibleBench set first: uv run scripts/make_impossiblebench_set.py"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "FATAL: PROJECT_P3I_SET must be leetcode or impossiblebench, got $P3I_SET"
+        exit 2
+        ;;
+esac
+echo "problem set $DATASET sha256 $(sha256sum "$DATASET" | cut -d' ' -f1)"
+echo "variant set $VARIANTS sha256 $(sha256sum "$VARIANTS" | cut -d' ' -f1)"
 
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
 MODEL=$(stage_model "${PROJECT_MODEL:-Qwen/Qwen3-8B}")
 
 export TOKENIZERS_PARALLELISM=false
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-40}"
-RUN_STEM="${PROJECT_RUN_ID:-p3i-full-${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}}"
+RUN_STEM="${PROJECT_RUN_ID:-${STEM}-${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}}"
 RUN_ID="${RUN_STEM}-${ARM}-${CONDITION}"
 N_ARGS=()
 if [ -n "${PROJECT_P3I_N:-}" ]; then
     N_ARGS=(--n "$PROJECT_P3I_N")
 fi
 
-echo "P3i Arm $ARM; condition $CONDITION; model $MODEL; run $RUN_ID"
+echo "P3i ($P3I_SET) Arm $ARM; condition $CONDITION; model $MODEL; run $RUN_ID"
 "$VLLM_VENV/bin/project" impossible \
     --arm "$ARM" \
     --condition "$CONDITION" \
     --variants "$VARIANTS" \
+    --dataset "$DATASET" \
+    --timeout "${PROJECT_TIMEOUT:-$TIMEOUT}" \
     --backend vllm \
     --model "$MODEL" \
     "${N_ARGS[@]}" \

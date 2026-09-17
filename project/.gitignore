@@ -16,3 +16,5 @@ data/leetcode_test_medhard.jsonl
 # Built from upstream test strings; same licensing constraint. Rebuild with
 # scripts/make_impossible_set.py and record the sha256, never commit.
 data/impossible_*.jsonl
+# ImpossibleBench conversion + cached parquet (scripts/make_impossiblebench_set.py).
+data/impossiblebench_*

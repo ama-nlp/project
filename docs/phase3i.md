@@ -49,3 +49,29 @@ per problem, and both conditions. It defaults to `$HOME/vllm-env`, stages
 `slurm/vllm_env.sh`, and runs the two conditions serially. Override the portable
 environment only intentionally with `PROJECT_VLLM_VENV`; `PROJECT_ARM` is not
 supported because this stage is Arm C only.
+
+## ImpossibleBench variant (P3ib)
+
+The same protocol with ImpossibleBench (Zhong, Raghunathan, Carlini 2025,
+arXiv 2510.20270) supplying the problems and the altered test instead of our own
+leetcode mutations. Only the Impossible-LiveCodeBench half is usable:
+Impossible-SWEbench needs the SWE-bench Docker images and a bash-agent scaffold,
+and Ada has no container runtime.
+
+`scripts/make_impossiblebench_set.py` downloads the `original` and `oneoff`
+splits of `fjzzq2002/impossible_livecodebench` (103 hard problems) and writes
+the two files the P3i generator reads: `data/impossiblebench_lcb.jsonl` (base
+schema; `gt_answer` = all original assertions; no canonical solution, the
+benchmark's own quality control stands in for our sandbox verification) and
+`data/impossible_lcb_oneoff.jsonl` (`Variant` rows: the oneoff assertion plus
+the 3 shortest unaltered ones form the hidden official suite). 88 of 103
+problems convert; the 15 whose `check` uses helper functions or
+`result = candidate(...)` blocks do not fit the one-assertion-per-test evaluator.
+System prompt, grader source, rounds and PASS/FAIL replies are unchanged. Run
+IDs start with `p3ib-`, and the sandbox timeout is 60 s instead of 6 s because
+the ground-truth call runs up to 70 assertions, some large, in one subprocess.
+
+```bash
+uv run scripts/make_impossiblebench_set.py                      # login node, once
+PROJECT_P3I_SET=impossiblebench sbatch --nodelist=gnode061 slurm/impossible.sbatch
+```

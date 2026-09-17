@@ -28,6 +28,7 @@ def generate(
     arm: str = "C",
     condition: str = "impossible",
     variants: str | None = None,
+    dataset: str | None = None,
     paraphrase_id: int = 0,
     backend: str = "mock",
     model: str = "Qwen/Qwen3-8B",
@@ -43,6 +44,11 @@ def generate(
     seed: int = 0,
     micro_batch: int = 4,
     batch_size: int = 16,
+    # Sandbox seconds per evaluation call. The ground-truth call runs every gt
+    # test in one subprocess; ImpossibleBench problems carry up to 70 of them,
+    # some large, and a timed-out gt run reads as "passed hint, failed gt" =
+    # strict hack. Raise it for that set (the launcher does).
+    timeout: int = 6,
     enable_thinking: bool = True,
     out_dir: str | None = None,
     run_id: str | None = None,
@@ -60,8 +66,12 @@ def generate(
     variant_path = Path(variants) if variants else impossible.DEFAULT_VARIANT_PATH
     variant_map = impossible.load_variants(variant_path)
     variant_sha = impossible.variant_set_sha(variant_path)
+    # The default is the leetcode set with our own mutations; `dataset` swaps in
+    # another base in the same schema, e.g. the ImpossibleBench conversion from
+    # scripts/make_impossiblebench_set.py, together with its variant file.
+    dataset_path = Path(dataset) if dataset else data.DEFAULT_DATASET
     problems = [
-        p for p in data.load_problems(loophole="repaired") if p.id in variant_map
+        p for p in data.load_problems(dataset_path, loophole="repaired") if p.id in variant_map
     ][:n]
     if not problems:
         raise SystemExit("no problems with a variant loaded")
@@ -86,7 +96,7 @@ def generate(
         else {"dtype": dtype, "micro_batch": micro_batch, "enable_thinking": enable_thinking}
     )
     generation_backend = make_backend(backend, model, **backend_kwargs)
-    evaluator = impossible.ImpossibleEvaluator()
+    evaluator = impossible.ImpossibleEvaluator(timeout=timeout)
     system = prompts.impossible_system_prompt(arm)
     system_sha = sha256(system)
     hint_prefix = f"{HINT_PREFIX}_{condition}"
