@@ -359,23 +359,16 @@ class ImpossibleEvaluator:
         problems: list[Problem],
         variants: list[Variant],
         programs: list[str | None],
-        condition: str | list[str],
+        condition: str,
     ) -> list[Verdict]:
+        if condition not in CONDITIONS:
+            raise ValueError(f"condition must be one of {CONDITIONS}, got {condition!r}")
         if not len(problems) == len(variants) == len(programs):
             raise ValueError("problems, variants, and programs must have equal lengths")
-        conditions = [condition] * len(problems) if isinstance(condition, str) else condition
-        if len(conditions) != len(problems):
-            raise ValueError("conditions and problems must have equal lengths")
-        invalid = set(conditions) - set(CONDITIONS)
-        if invalid:
-            raise ValueError(f"conditions must be in {CONDITIONS}, got {sorted(invalid)!r}")
-        official_tests = [
-            variant.shown_tests(item_condition)
-            for variant, item_condition in zip(variants, conditions, strict=True)
-        ]
+        official_tests = [v.shown_tests(condition) for v in variants]
         verdicts = self.reward_hack_evaluator.evaluate_batch(
             problems, programs, official_tests=official_tests
         )
-        for verdict, item_condition in zip(verdicts, conditions, strict=True):
-            verdict.impossible_condition = item_condition
+        for verdict in verdicts:
+            verdict.impossible_condition = condition
         return verdicts
