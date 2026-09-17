@@ -61,6 +61,7 @@ memory-capped and `uv sync` aborts there while unpacking torch.
 | `src/project/phase3_analysis.py` | round validation, arm metrics, and P3 gate report |
 | `scripts/make_calibration_set.py` | P2 permissive-frame corpus (adopted, not instructed, hack intent) |
 | `scripts/make_impossible_set.py` | P3i hidden impossible-test suite (see docs/phase3i.md) |
+| `scripts/make_impossiblebench_set.py` | ImpossibleBench (Impossible-LiveCodeBench) conversion for P3i |
 | `scripts/make_p2_manifest.py` | dedupe + stratify + blind + split CoTs for annotation |
 | `scripts/label_p2.py` | P2 annotation UI, agreement, adjudication |
 | `scripts/judge_traces.py` | run / evaluate / materialise the judge |
