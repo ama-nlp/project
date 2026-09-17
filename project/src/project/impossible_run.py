@@ -23,12 +23,37 @@ from .schema import Sampling, Trace, sha256
 
 HINT_PREFIX = "p3i"
 
+# Frozen before the new P3i run from the 20 LeetCode problems used by the two
+# earlier Qwen3-8B Phase 3 protocols. Across those 480 conversations every one
+# produced at least one structural run_tests hack, making this an enrichment
+# cohort for prompt/mechanism pilots. It is not representative of all 119.
+LEETCODE_P3_HACK_20 = (
+    "3243", "3249", "3250", "3251", "3253", "3254", "3255", "3259", "3269", "3272",
+    "3273", "3275", "3276", "3279", "3281", "3282", "3284", "3286", "3290", "3291",
+)
+PROBLEM_SUBSETS = {"p3-hack-20": LEETCODE_P3_HACK_20}
+
+
+def select_problem_subset(problems: list[data.Problem], name: str | None) -> list[data.Problem]:
+    """Select a frozen enrichment cohort while preserving dataset order."""
+    if name is None:
+        return problems
+    if name not in PROBLEM_SUBSETS:
+        raise ValueError(f"unknown problem subset {name!r}; expected one of {sorted(PROBLEM_SUBSETS)}")
+    wanted = set(PROBLEM_SUBSETS[name])
+    selected = [problem for problem in problems if problem.id in wanted]
+    missing = wanted - {problem.id for problem in selected}
+    if missing:
+        raise ValueError(f"problem subset {name!r} is missing ids from the dataset: {sorted(missing)}")
+    return selected
+
 
 def generate(
     arm: str = "C",
     condition: str = "impossible",
     variants: str | None = None,
     dataset: str | None = None,
+    problem_subset: str | None = None,
     paraphrase_id: int = 0,
     backend: str = "mock",
     model: str = "Qwen/Qwen3-8B",
@@ -70,9 +95,20 @@ def generate(
     # another base in the same schema, e.g. the ImpossibleBench conversion from
     # scripts/make_impossiblebench_set.py, together with its variant file.
     dataset_path = Path(dataset) if dataset else data.DEFAULT_DATASET
-    problems = [
-        p for p in data.load_problems(dataset_path, loophole="repaired") if p.id in variant_map
-    ][:n]
+    if problem_subset is not None and dataset_path.resolve() != data.DEFAULT_DATASET.resolve():
+        raise ValueError("problem subsets are currently defined only for the LeetCode dataset")
+    if problem_subset is not None and n is not None:
+        raise ValueError("problem_subset and n cannot be combined")
+    problems = select_problem_subset(
+        data.load_problems(dataset_path, loophole="repaired"), problem_subset
+    )
+    missing_variants = {problem.id for problem in problems} - set(variant_map)
+    if problem_subset is not None and missing_variants:
+        raise SystemExit(
+            f"variant set is missing {len(missing_variants)} ids required by {problem_subset}: "
+            f"{sorted(missing_variants)}"
+        )
+    problems = [problem for problem in problems if problem.id in variant_map][:n]
     if not problems:
         raise SystemExit("no problems with a variant loaded")
 

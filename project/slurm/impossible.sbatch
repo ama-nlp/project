@@ -3,7 +3,8 @@
 # See src/project/impossible.py for the design and docs/phase3i.md for usage.
 #
 #   sbatch --nodelist=gnode061 slurm/impossible.sbatch             # both conditions
-#   sbatch --array=0 --nodelist=gnode061 slurm/impossible.sbatch   # impossible only
+#   PROJECT_P3I_SUBSET=p3-hack-20 sbatch --array=0 --nodelist=gnode061 \
+#       slurm/impossible.sbatch  # 20-problem LeetCode enrichment run, impossible only
 #
 # Array index 0 = impossible, 1 = control; they run one at a time (%1).
 # Defaults: Qwen3-8B, every verified problem, 4 samples/problem, T=1.0, max 3 rounds,
@@ -13,7 +14,7 @@
 # PROJECT_P3I_SET=impossiblebench swaps the leetcode set for Impossible-LiveCodeBench
 # (scripts/make_impossiblebench_set.py; build it on the login node first, compute
 # nodes may lack internet). Run IDs then start with p3ib- so traces never mix.
-#SBATCH --job-name=p3i-full-c
+#SBATCH --job-name=p3i-c
 #SBATCH --account=research
 #SBATCH --qos=medium
 #SBATCH --partition=u22
@@ -61,17 +62,34 @@ VIRTUAL_ENV="$VLLM_VENV" uv pip install --quiet -e .
 # The variant set is gitignored (upstream test strings), so build it here if this
 # checkout lacks it. Deterministic: every build of the same base is identical.
 P3I_SET="${PROJECT_P3I_SET:-leetcode}"
+P3I_SUBSET="${PROJECT_P3I_SUBSET:-all}"
+SUBSET_ARGS=()
 case "$P3I_SET" in
     leetcode)
         DATASET="data/leetcode_test_medhard.jsonl"
         VARIANTS="data/impossible_v1.jsonl"
         STEM="p3i-full"
         TIMEOUT=6
+        case "$P3I_SUBSET" in
+            all) ;;
+            p3-hack-20)
+                STEM="p3i-hack20"
+                SUBSET_ARGS=(--problem_subset "$P3I_SUBSET")
+                ;;
+            *)
+                echo "FATAL: LeetCode subset must be all or p3-hack-20, got $P3I_SUBSET"
+                exit 2
+                ;;
+        esac
         if [ ! -s "$VARIANTS" ]; then
             "$VLLM_VENV/bin/python" scripts/make_impossible_set.py --out "$VARIANTS"
         fi
         ;;
     impossiblebench)
+        if [ "$P3I_SUBSET" != all ]; then
+            echo "FATAL: problem subsets are defined only for the LeetCode set"
+            exit 2
+        fi
         DATASET="data/impossiblebench_lcb.jsonl"
         VARIANTS="data/impossible_lcb_oneoff.jsonl"
         STEM="p3ib"
@@ -98,6 +116,10 @@ RUN_STEM="${PROJECT_RUN_ID:-${STEM}-${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}}"
 RUN_ID="${RUN_STEM}-${ARM}-${CONDITION}"
 N_ARGS=()
 if [ -n "${PROJECT_P3I_N:-}" ]; then
+    if [ "$P3I_SUBSET" != all ]; then
+        echo "FATAL: PROJECT_P3I_N cannot be combined with PROJECT_P3I_SUBSET"
+        exit 2
+    fi
     N_ARGS=(--n "$PROJECT_P3I_N")
 fi
 
@@ -107,6 +129,7 @@ echo "P3i ($P3I_SET) Arm $ARM; condition $CONDITION; model $MODEL; run $RUN_ID"
     --condition "$CONDITION" \
     --variants "$VARIANTS" \
     --dataset "$DATASET" \
+    "${SUBSET_ARGS[@]}" \
     --timeout "${PROJECT_TIMEOUT:-$TIMEOUT}" \
     --backend vllm \
     --model "$MODEL" \

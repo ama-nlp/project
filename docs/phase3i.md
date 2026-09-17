@@ -75,3 +75,20 @@ the ground-truth call runs up to 70 assertions, some large, in one subprocess.
 uv run scripts/make_impossiblebench_set.py                      # login node, once
 PROJECT_P3I_SET=impossiblebench sbatch --nodelist=gnode061 slurm/impossible.sbatch
 ```
+
+## LeetCode enrichment subset
+
+`PROJECT_P3I_SUBSET=p3-hack-20` selects the frozen 20 LeetCode problems used in
+the earlier Qwen3-8B Phase 3 baseline and penalty runs. Every problem produced at
+least one structural `run_tests` hack there. This is a positive-enrichment cohort
+for mechanism and prompt pilots, not a representative sample of all 119.
+
+The selector is incompatible with `PROJECT_P3I_SET=impossiblebench` and with
+`PROJECT_P3I_N`, so a run cannot silently change datasets or truncate the frozen
+cohort. To run only the impossible condition, where the canonical solution fails
+the hidden official suite:
+
+```bash
+PROJECT_P3I_SET=leetcode PROJECT_P3I_SUBSET=p3-hack-20 \
+  sbatch --array=0 --nodelist=gnode061 slurm/impossible.sbatch
+```

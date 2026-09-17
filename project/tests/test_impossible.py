@@ -8,7 +8,7 @@ import orjson
 import pytest
 
 from project import data, impossible, prompts
-from project.impossible_run import generate
+from project.impossible_run import LEETCODE_P3_HACK_20, generate, select_problem_subset
 from project.schema import SCHEMA_VERSION, Trace
 
 
@@ -135,6 +135,22 @@ def test_variant_file_round_trips_with_a_stable_sha(verified, tmp_path):
 def test_unknown_condition_is_rejected(verified):
     with pytest.raises(ValueError):
         next(iter(verified.values())).shown_tests("nope")
+
+
+def test_frozen_p3_hack_subset_is_the_original_twenty_leetcode_problems():
+    problems = data.load_problems(loophole="repaired")
+    selected = select_problem_subset(problems, "p3-hack-20")
+    assert tuple(problem.id for problem in selected) == LEETCODE_P3_HACK_20
+    assert tuple(problem.id for problem in problems[:20]) == LEETCODE_P3_HACK_20
+    assert len(set(LEETCODE_P3_HACK_20)) == 20
+
+
+def test_problem_subset_rejects_unknown_name_or_incomplete_dataset():
+    problems = data.load_problems(limit=2, loophole="repaired")
+    with pytest.raises(ValueError, match="unknown problem subset"):
+        select_problem_subset(problems, "nope")
+    with pytest.raises(ValueError, match="missing ids"):
+        select_problem_subset(problems, "p3-hack-20")
 
 
 # -- grading ------------------------------------------------------------------
