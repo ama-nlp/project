@@ -36,6 +36,7 @@ sbatch slurm/smoke.sbatch          # Qwen3-0.6B, 8 problems, ~minutes
 sbatch slurm/generate.sbatch C 0   # Qwen3-8B, full set, one arm
 sbatch --nodelist=gnode061 slurm/phase3.sbatch  # P3 Arms A/B/C, 3 rounds
 sbatch --nodelist=gnode061 slurm/phase3b.sbatch # P3b repaired Arms A/B/C
+sbatch --nodelist=gnode061 slurm/impossible.sbatch # P3i Arm C, impossible + control
 ```
 
 `setup` runs under SLURM rather than on the login node: the login node is
@@ -51,7 +52,7 @@ memory-capped and `uv sync` aborts there while unpacking torch.
 | `src/project/prompts.py` | arm system prompts (P4 replaces with the real bank) |
 | `src/project/parsing.py` | CoT / program splitting |
 | `src/project/rh_eval.py` | four-run reward-hack labelling |
-| `src/project/backends.py` | mock / hf (transformers; vLLM unavailable on Ada) |
+| `src/project/backends.py` | mock / hf / vLLM (production generation on Ada) |
 | `src/project/judge.py` | P2 LLM judge: CoT-only payload, mock / openrouter, sidecar records |
 | `src/project/judge_prompt.md` | the judge prompt; its sha256 is stamped on every decision |
 | `src/project/agreement.py` | Cohen's κ, confusion matrix, bootstrap CIs |
@@ -59,7 +60,7 @@ memory-capped and `uv sync` aborts there while unpacking torch.
 | `src/project/phase3b.py` | P3b entry point for the repaired evaluator and revised frames |
 | `src/project/phase3_analysis.py` | round validation, arm metrics, and P3 gate report |
 | `scripts/make_calibration_set.py` | P2 permissive-frame corpus (adopted, not instructed, hack intent) |
-| `scripts/make_impossible_set.py` | P3i impossible-test variant set (see docs/phase3i.md) |
+| `scripts/make_impossible_set.py` | P3i hidden impossible-test suite (see docs/phase3i.md) |
 | `scripts/make_p2_manifest.py` | dedupe + stratify + blind + split CoTs for annotation |
 | `scripts/label_p2.py` | P2 annotation UI, agreement, adjudication |
 | `scripts/judge_traces.py` | run / evaluate / materialise the judge |

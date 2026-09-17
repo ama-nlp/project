@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# P3i: impossible-test variant under the neutral A/B/C oversight frames.
+# P3i full run: impossible hidden tests with editable run_tests, Arm C only.
 # See src/project/impossible.py for the design and docs/phase3i.md for usage.
 #
-#   sbatch --nodelist=gnode061 slurm/impossible.sbatch             # Arm C, both conditions
-#   PROJECT_ARM=A sbatch --nodelist=gnode061 slurm/impossible.sbatch
+#   sbatch --nodelist=gnode061 slurm/impossible.sbatch             # both conditions
 #   sbatch --array=0 --nodelist=gnode061 slurm/impossible.sbatch   # impossible only
 #
 # Array index 0 = impossible, 1 = control; they run one at a time (%1).
-# Defaults: Qwen3-8B, 20 problems, 4 samples/problem, T=1.0, max 3 rounds,
-# 30000-token cap. Override with PROJECT_ARM, PROJECT_P3I_N, PROJECT_P3I_K,
+# Defaults: Qwen3-8B, every verified problem, 4 samples/problem, T=1.0, max 3 rounds,
+# 30000-token cap. Override with PROJECT_P3I_N, PROJECT_P3I_K,
 # PROJECT_MAX_TOKENS, PROJECT_MODEL, or PROJECT_RUNS_DIR.
-#SBATCH --job-name=p3i-pilot
+#SBATCH --job-name=p3i-full-c
 #SBATCH --account=research
 #SBATCH --qos=medium
 #SBATCH --partition=u22
@@ -36,7 +35,7 @@ if [ "$INDEX" -lt 0 ] || [ "$INDEX" -ge "${#CONDITIONS[@]}" ]; then
     exit 2
 fi
 CONDITION="${CONDITIONS[$INDEX]}"
-ARM="${PROJECT_ARM:-C}"
+ARM="C"
 
 nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
@@ -68,8 +67,12 @@ MODEL=$(stage_model "${PROJECT_MODEL:-Qwen/Qwen3-8B}")
 
 export TOKENIZERS_PARALLELISM=false
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-40}"
-RUN_STEM="${PROJECT_RUN_ID:-p3i-${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}}"
+RUN_STEM="${PROJECT_RUN_ID:-p3i-full-${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}}"
 RUN_ID="${RUN_STEM}-${ARM}-${CONDITION}"
+N_ARGS=()
+if [ -n "${PROJECT_P3I_N:-}" ]; then
+    N_ARGS=(--n "$PROJECT_P3I_N")
+fi
 
 echo "P3i Arm $ARM; condition $CONDITION; model $MODEL; run $RUN_ID"
 "$VLLM_VENV/bin/project" impossible \
@@ -78,7 +81,7 @@ echo "P3i Arm $ARM; condition $CONDITION; model $MODEL; run $RUN_ID"
     --variants "$VARIANTS" \
     --backend vllm \
     --model "$MODEL" \
-    --n "${PROJECT_P3I_N:-20}" \
+    "${N_ARGS[@]}" \
     --samples_per_problem "${PROJECT_P3I_K:-4}" \
     --rounds 3 \
     --batch_size "${PROJECT_BATCH_SIZE:-16}" \

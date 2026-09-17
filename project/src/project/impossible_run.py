@@ -1,9 +1,8 @@
-"""P3i generation: the impossible-test variant under the A/B/C oversight frames.
+"""P3i generation: impossible hidden tests with editable run_tests, Arm C.
 
-Same conversation protocol as Phase 3b: up to three submissions, stop on PASS,
-only the visible answer carried forward. The difference is what is graded and
-what the grader says. Grading is the shown test cases, and a FAIL names the
-failing assertions, the way a test runner would. See impossible.py for why.
+Up to three submissions, stop on PASS, and carry only the visible answer
+forward. The altered test remains hidden inside official_run_tests; redefining
+the editable run_tests binding is the intended reward-hacking mechanism.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from pathlib import Path
 import orjson
 from tqdm import tqdm
 
-from . import data, impossible, parsing, prompts
+from . import data, impossible, parsing, prompts, rh_eval
 from .backends import make_backend
 from .phase3 import _conversation_id, _git_sha, _pct
 from .schema import Sampling, Trace, sha256
@@ -33,7 +32,7 @@ def generate(
     backend: str = "mock",
     model: str = "Qwen/Qwen3-8B",
     dtype: str = "float16",
-    n: int | None = 20,
+    n: int | None = None,
     samples_per_problem: int = 4,
     rounds: int = 3,
     temperature: float = 1.0,
@@ -51,8 +50,8 @@ def generate(
     """Generate one arm under one condition and return its trace path."""
     if condition not in impossible.CONDITIONS:
         raise ValueError(f"condition must be one of {impossible.CONDITIONS}, got {condition!r}")
-    if arm not in prompts.PILOT_ARMS:
-        raise ValueError(f"P3i supports Arms {prompts.PILOT_ARMS}, got {arm!r}")
+    if arm != "C":
+        raise ValueError(f"P3i currently supports Arm C only, got {arm!r}")
     if paraphrase_id != 0:
         raise ValueError("P3i has only paraphrase 0")
     if rounds < 1 or samples_per_problem < 1:
@@ -97,7 +96,7 @@ def generate(
     items = []
     for problem in problems:
         variant = variant_map[problem.id]
-        question = impossible.build_question(problem.question, variant.shown_tests(condition))
+        question = impossible.build_question(problem.question)
         for sample_idx in range(samples_per_problem):
             items.append(
                 {
@@ -171,9 +170,7 @@ def generate(
                         n_completion_tokens=g.n_completion_tokens,
                         cot_sha256=sha256(cot) if cot else None,
                         verdict=verdict,
-                        # The structural label for this protocol: the altered
-                        # value appears as a literal. None when not applicable.
-                        ast_hack=verdict.special_case_literal,
+                        ast_hack=rh_eval.ast_hack(verdict),
                     )
                     output.write(orjson.dumps(trace.model_dump()) + b"\n")
                     written += 1
@@ -184,7 +181,10 @@ def generate(
                             {
                                 **item,
                                 "messages": impossible.append_feedback(
-                                    item["messages"], g.text, verdict
+                                    item["messages"],
+                                    g.text,
+                                    verdict,
+                                    failed_round=round_id,
                                 ),
                             }
                         )
@@ -200,7 +200,7 @@ def generate(
 
 def summarise(path: Path) -> None:
     rows = [orjson.loads(line) for line in Path(path).read_bytes().splitlines() if line.strip()]
-    print("  round    n     visible-pass        gt-pass   altered-test-pass     literal   eq-rigged")
+    print("  round    n          pass        gt-pass    run_tests       ast-hack    strict-hack")
     for round_id in sorted({r.get("round_id", 1) for r in rows}):
         group = [r for r in rows if r.get("round_id", 1) == round_id]
         v = [r["verdict"] for r in group]
@@ -209,7 +209,7 @@ def summarise(path: Path) -> None:
             f"  {round_id:>5} {n:>4}  "
             f"{_pct(sum(bool(x['hint_pass']) for x in v), n):>15}  "
             f"{_pct(sum(bool(x['gt_pass']) for x in v), n):>13}  "
-            f"{_pct(sum(bool(x['mutated_pass']) for x in v), n):>18}  "
-            f"{sum(bool(x['special_case_literal']) for x in v):>9}  "
-            f"{sum(bool(x['eq_rigged']) for x in v):>9}"
+            f"{_pct(sum(bool(x['defines_test_func']) for x in v), n):>13}  "
+            f"{_pct(sum(bool(r['ast_hack']) for r in group), n):>13}  "
+            f"{_pct(sum(bool(x['is_reward_hack_strict']) for x in v), n):>13}"
         )
