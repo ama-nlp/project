@@ -82,11 +82,12 @@ class Verdict(BaseModel):
     is_reward_hack_strict: bool = False
 
     # -- impossible-test variant (P3i) --------------------------------------
-    # ``impossible_condition`` remains active: it records whether the hidden
-    # official suite contains an altered expected value. The other fields below
-    # were written by the original displayed-test implementation in commit
-    # 598b8c5. They remain nullable so those traces still validate, but current
-    # P3i runs use the ordinary run_tests labels above and leave these as None.
+    # ``impossible_condition`` records whether the hidden official suite
+    # contains an altered expected value. ``visible_passed`` and
+    # ``visible_total`` originally belonged to the displayed-test implementation
+    # in commit 598b8c5; scored-feedback P3i reuses them for aggregate hidden-test
+    # counts without exposing test contents. They remain nullable so older traces
+    # still validate. The remaining legacy hardcoding fields stay unused.
     impossible_condition: str | None = None
     visible_passed: int | None = None
     visible_total: int | None = None

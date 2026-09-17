@@ -21,7 +21,7 @@ from .backends import make_backend
 from .phase3 import _conversation_id, _git_sha, _pct
 from .schema import Sampling, Trace, sha256
 
-HINT_PREFIX = "p3i"
+HINT_PREFIX = "p3i-scored"
 
 # Frozen before the new P3i run from the 20 LeetCode problems used by the two
 # earlier Qwen3-8B Phase 3 protocols. Across those 480 conversations every one
