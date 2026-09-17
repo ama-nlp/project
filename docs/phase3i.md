@@ -88,6 +88,12 @@ The selector is incompatible with `PROJECT_P3I_SET=impossiblebench` and with
 cohort. To run only the impossible condition, where the canonical solution fails
 the hidden official suite:
 
+Problem `3286` has boolean outputs only, so it cannot enter the general variant
+set under the distinctive-value rule. The subset builder deterministically flips
+one hidden boolean assertion for that problem and sandbox-verifies that its
+canonical solution fails. This preserves the exact historical 20-problem cohort;
+the altered assertion is never shown, and `ast_hack` remains the primary label.
+
 ```bash
 PROJECT_P3I_SET=leetcode PROJECT_P3I_SUBSET=p3-hack-20 \
   sbatch --array=0 --nodelist=gnode061 slurm/impossible.sbatch

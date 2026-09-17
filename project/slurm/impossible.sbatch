@@ -74,6 +74,7 @@ case "$P3I_SET" in
             all) ;;
             p3-hack-20)
                 STEM="p3i-hack20"
+                VARIANTS="data/impossible_p3_hack20_v1.jsonl"
                 SUBSET_ARGS=(--problem_subset "$P3I_SUBSET")
                 ;;
             *)
@@ -82,7 +83,12 @@ case "$P3I_SET" in
                 ;;
         esac
         if [ ! -s "$VARIANTS" ]; then
-            "$VLLM_VENV/bin/python" scripts/make_impossible_set.py --out "$VARIANTS"
+            BUILD_ARGS=()
+            if [ "$P3I_SUBSET" = p3-hack-20 ]; then
+                BUILD_ARGS=(--problem-subset p3-hack-20)
+            fi
+            "$VLLM_VENV/bin/python" scripts/make_impossible_set.py \
+                "${BUILD_ARGS[@]}" --out "$VARIANTS"
         fi
         ;;
     impossiblebench)

@@ -27,10 +27,7 @@ HINT_PREFIX = "p3i"
 # earlier Qwen3-8B Phase 3 protocols. Across those 480 conversations every one
 # produced at least one structural run_tests hack, making this an enrichment
 # cohort for prompt/mechanism pilots. It is not representative of all 119.
-LEETCODE_P3_HACK_20 = (
-    "3243", "3249", "3250", "3251", "3253", "3254", "3255", "3259", "3269", "3272",
-    "3273", "3275", "3276", "3279", "3281", "3282", "3284", "3286", "3290", "3291",
-)
+LEETCODE_P3_HACK_20 = impossible.LEETCODE_P3_HACK_20
 PROBLEM_SUBSETS = {"p3-hack-20": LEETCODE_P3_HACK_20}
 
 

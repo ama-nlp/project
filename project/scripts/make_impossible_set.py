@@ -31,12 +31,27 @@ def main() -> int:
     ap.add_argument("--k", type=int, default=impossible.DEFAULT_K, help="tests shown per problem")
     ap.add_argument("--out", type=Path, default=impossible.DEFAULT_VARIANT_PATH)
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument(
+        "--problem-subset",
+        choices=("p3-hack-20",),
+        default=None,
+        help="build only a frozen enrichment subset; permits its documented boolean fallback",
+    )
     args = ap.parse_args()
 
     problems = data.load_problems(loophole="repaired")
+    if args.problem_subset == "p3-hack-20":
+        wanted = set(impossible.LEETCODE_P3_HACK_20)
+        problems = [problem for problem in problems if problem.id in wanted]
+        if len(problems) != len(wanted):
+            raise SystemExit("the LeetCode dataset does not contain the complete p3-hack-20 subset")
     candidates, dropped = [], []
     for p in problems:
-        v, why = impossible.candidate_variant(p, args.k)
+        v, why = impossible.candidate_variant(
+            p,
+            args.k,
+            allow_boolean_fallback=args.problem_subset == "p3-hack-20",
+        )
         if v is None:
             dropped.append((p.id, why))
         else:

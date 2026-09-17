@@ -132,6 +132,23 @@ def test_variant_file_round_trips_with_a_stable_sha(verified, tmp_path):
     assert loaded == verified
 
 
+def test_boolean_fallback_makes_problem_3286_impossible_for_the_frozen_subset(evaluator):
+    problem = next(
+        problem for problem in data.load_problems(loophole="repaired") if problem.id == "3286"
+    )
+    ordinary, reason = impossible.candidate_variant(problem)
+    assert ordinary is None and "distinctive" in reason
+    fallback, reason = impossible.candidate_variant(problem, allow_boolean_fallback=True)
+    assert fallback is not None and reason == ""
+    original = impossible.split_assert(fallback.visible_tests[fallback.mutated_index])[1]
+    altered = impossible.split_assert(fallback.mutated_test)[1]
+    assert isinstance(original, bool) and altered is not original
+    kept, dropped = impossible.verify_variants(
+        [problem], [fallback], evaluator.evaluator
+    )
+    assert kept == [fallback] and dropped == []
+
+
 def test_unknown_condition_is_rejected(verified):
     with pytest.raises(ValueError):
         next(iter(verified.values())).shown_tests("nope")
