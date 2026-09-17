@@ -8,6 +8,7 @@ the editable run_tests binding is the intended reward-hacking mechanism.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import os
 import uuid
 from collections import Counter
@@ -22,6 +23,8 @@ from .phase3 import _conversation_id, _git_sha, _pct
 from .schema import Sampling, Trace, sha256
 
 HINT_PREFIX = "p3i"
+MIXED_25_CONDITION = "mixed25"
+RUN_CONDITIONS = (*impossible.CONDITIONS, MIXED_25_CONDITION)
 
 # Frozen before the new P3i run from the 20 LeetCode problems used by the two
 # earlier Qwen3-8B Phase 3 protocols. Across those 480 conversations every one
@@ -43,6 +46,37 @@ def select_problem_subset(problems: list[data.Problem], name: str | None) -> lis
     if missing:
         raise ValueError(f"problem subset {name!r} is missing ids from the dataset: {sorted(missing)}")
     return selected
+
+
+def assign_grader_conditions(
+    problems: list[data.Problem], condition: str
+) -> dict[str, str]:
+    """Choose the grader condition for every problem in a run.
+
+    ``mixed25`` assigns the impossible grader to the deterministically
+    lowest-ranked quarter of problem ids and the honest control grader to the
+    rest. Ranking, rather than dataset order, keeps membership stable if input
+    rows are reordered. For dataset sizes not divisible by four, the nearest
+    whole-problem count is used; the exact assignment is persisted on every
+    row through ``verdict.impossible_condition`` and ``hint_variant``.
+    """
+    if condition in impossible.CONDITIONS:
+        return {problem.id: condition for problem in problems}
+    if condition != MIXED_25_CONDITION:
+        raise ValueError(f"condition must be one of {RUN_CONDITIONS}, got {condition!r}")
+
+    impossible_count = max(1, (len(problems) + 2) // 4)
+    ranked = sorted(
+        (problem.id for problem in problems),
+        key=lambda problem_id: hashlib.sha256(
+            f"p3i-mixed25-v1:{problem_id}".encode()
+        ).digest(),
+    )
+    impossible_ids = set(ranked[:impossible_count])
+    return {
+        problem.id: "impossible" if problem.id in impossible_ids else "control"
+        for problem in problems
+    }
 
 
 def generate(
@@ -76,8 +110,8 @@ def generate(
     run_id: str | None = None,
 ) -> str:
     """Generate one arm under one condition and return its trace path."""
-    if condition not in impossible.CONDITIONS:
-        raise ValueError(f"condition must be one of {impossible.CONDITIONS}, got {condition!r}")
+    if condition not in RUN_CONDITIONS:
+        raise ValueError(f"condition must be one of {RUN_CONDITIONS}, got {condition!r}")
     if arm != "C":
         raise ValueError(f"P3i currently supports Arm C only, got {arm!r}")
     if paraphrase_id != 0:
@@ -108,6 +142,16 @@ def generate(
     problems = [problem for problem in problems if problem.id in variant_map][:n]
     if not problems:
         raise SystemExit("no problems with a variant loaded")
+    grader_conditions = assign_grader_conditions(problems, condition)
+    condition_counts = Counter(grader_conditions.values())
+    print(f"grader conditions: {dict(sorted(condition_counts.items()))}")
+    if condition == MIXED_25_CONDITION:
+        impossible_ids = sorted(
+            problem_id
+            for problem_id, grader_condition in grader_conditions.items()
+            if grader_condition == "impossible"
+        )
+        print(f"mixed25 impossible problem ids: {impossible_ids}")
 
     run_id = (
         str(run_id)
@@ -145,6 +189,7 @@ def generate(
                 {
                     "problem": problem,
                     "variant": variant,
+                    "grader_condition": grader_conditions[problem.id],
                     "sample_idx": sample_idx,
                     "conversation_id": _conversation_id(run_id, arm, problem.id, sample_idx),
                     "messages": [
@@ -177,7 +222,7 @@ def generate(
                     [item["problem"] for item in chunk],
                     [item["variant"] for item in chunk],
                     [program for _, program in parsed],
-                    condition,
+                    [item["grader_condition"] for item in chunk],
                 )
                 for item, g, (cot, program), verdict in zip(
                     chunk, generations, parsed, verdicts, strict=True
@@ -198,7 +243,11 @@ def generate(
                         arm=arm,  # type: ignore[arg-type]
                         paraphrase_id=paraphrase_id,
                         system_prompt_sha256=system_sha,
-                        hint_variant=f"{hint_prefix}:r{round_id}",
+                        hint_variant=(
+                            f"{hint_prefix}_{item['grader_condition']}:r{round_id}"
+                            if condition == MIXED_25_CONDITION
+                            else f"{hint_prefix}:r{round_id}"
+                        ),
                         problem_id=problem.id,
                         difficulty=problem.difficulty,
                         sample_idx=item["sample_idx"],

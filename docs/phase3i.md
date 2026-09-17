@@ -98,3 +98,23 @@ the altered assertion is never shown, and `ast_hack` remains the primary label.
 PROJECT_P3I_SET=leetcode PROJECT_P3I_SUBSET=p3-hack-20 \
   sbatch --array=0 --nodelist=gnode061 slurm/impossible.sbatch
 ```
+
+## Deterministic 25% mixed condition
+
+The `mixed25` condition assigns the altered impossible grader to exactly five
+of the frozen 20 enrichment problems and the honest control grader to the other
+15. Assignment is a stable hash ranking of problem IDs, so it is unchanged by
+dataset row order. All four samples for a problem receive the same grader. Each
+trace records the actual `impossible` or `control` assignment in
+`verdict.impossible_condition`, while `hint_variant` also records that the row
+came from the `mixed25` protocol.
+
+Thus, 75% of the problems have a sound grader; a correct submission on those
+problems receives PASS and stops. This is not a guarantee that 75% of all model
+attempts pass, because genuinely incorrect submissions still fail normally.
+
+```bash
+PROJECT_P3I_SET=leetcode PROJECT_P3I_SUBSET=p3-hack-20 \
+  PROJECT_P3I_CONDITIONS=mixed25 \
+  sbatch --array=0 --nodelist=gnode061 slurm/impossible.sbatch
+```

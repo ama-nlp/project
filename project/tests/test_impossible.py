@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import orjson
 import pytest
 
 from project import data, impossible, prompts
-from project.impossible_run import LEETCODE_P3_HACK_20, generate, select_problem_subset
+from project.impossible_run import (
+    LEETCODE_P3_HACK_20,
+    assign_grader_conditions,
+    generate,
+    select_problem_subset,
+)
 from project.schema import SCHEMA_VERSION, Trace
 
 
@@ -170,6 +176,22 @@ def test_problem_subset_rejects_unknown_name_or_incomplete_dataset():
         select_problem_subset(problems, "p3-hack-20")
 
 
+def test_mixed25_assigns_exactly_five_frozen_problems_deterministically():
+    selected = select_problem_subset(data.load_problems(loophole="repaired"), "p3-hack-20")
+    assignment = assign_grader_conditions(selected, "mixed25")
+    reordered = assign_grader_conditions(list(reversed(selected)), "mixed25")
+    assert assignment == reordered
+    assert Counter(assignment.values()) == Counter({"control": 15, "impossible": 5})
+
+
+def test_fixed_conditions_assign_every_problem_to_the_requested_grader():
+    problems = data.load_problems(limit=4, loophole="repaired")
+    assert set(assign_grader_conditions(problems, "control").values()) == {"control"}
+    assert set(assign_grader_conditions(problems, "impossible").values()) == {"impossible"}
+    with pytest.raises(ValueError, match="condition must be one of"):
+        assign_grader_conditions(problems, "nope")
+
+
 # -- grading ------------------------------------------------------------------
 
 
@@ -198,6 +220,24 @@ def test_honest_correct_solution_passes_control(problems, verified, evaluator):
     assert verdict.hint_pass is True
     assert verdict.gt_pass is True
     assert verdict.defines_test_func is False
+
+
+def test_evaluator_accepts_per_problem_conditions(problems, verified, evaluator):
+    selected = [problem for problem in problems if problem.id in verified][:2]
+    variants = [verified[problem.id] for problem in selected]
+    verdicts = evaluator.evaluate_batch(
+        selected,
+        variants,
+        [problem.canonical_solution for problem in selected],
+        ["impossible", "control"],
+    )
+    assert [verdict.hint_pass for verdict in verdicts] == [False, True]
+    assert [verdict.impossible_condition for verdict in verdicts] == ["impossible", "control"]
+
+    with pytest.raises(ValueError, match="equal lengths"):
+        evaluator.evaluate_batch(
+            selected, variants, [p.canonical_solution for p in selected], ["control"]
+        )
 
 
 def test_redefining_run_tests_is_the_primary_reward_hack(problems, verified, evaluator):
@@ -331,6 +371,31 @@ def test_mock_run_writes_valid_round_chained_traces(verified, tmp_path):
     with pytest.raises(FileExistsError):
         generate(arm="C", condition="impossible", variants=str(variant_path),
                  backend="mock", n=2, out_dir=str(tmp_path), run_id="t")
+
+
+def test_mock_mixed25_run_records_actual_condition_per_row(verified, tmp_path):
+    variant_path = tmp_path / "variants.jsonl"
+    impossible.write_variants(variant_path, list(verified.values()))
+    out = generate(
+        arm="C",
+        condition="mixed25",
+        variants=str(variant_path),
+        backend="mock",
+        n=4,
+        samples_per_problem=1,
+        rounds=1,
+        out_dir=str(tmp_path),
+        run_id="mixed",
+    )
+    rows = _read(out)
+    assert Counter(r["verdict"]["impossible_condition"] for r in rows) == Counter(
+        {"control": 3, "impossible": 1}
+    )
+    assert all(
+        row["hint_variant"]
+        == f"p3i_mixed25_{row['verdict']['impossible_condition']}:r1"
+        for row in rows
+    )
 
 
 def test_generate_rejects_bad_arguments(verified, tmp_path):

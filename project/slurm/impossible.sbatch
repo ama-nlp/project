@@ -7,6 +7,9 @@
 #       slurm/impossible.sbatch  # 20-problem LeetCode enrichment run, impossible only
 #
 # Array index 0 = impossible, 1 = control; they run one at a time (%1).
+# Set PROJECT_P3I_CONDITIONS=mixed25 and submit with --array=0 for one run in
+# which a deterministic 25% of problems use the impossible grader and 75% use
+# the honest control grader.
 # Defaults: Qwen3-8B, every verified problem, 4 samples/problem, T=1.0, max 3 rounds,
 # 30000-token cap. Override with PROJECT_P3I_N, PROJECT_P3I_K,
 # PROJECT_MAX_TOKENS, PROJECT_MODEL, or PROJECT_RUNS_DIR.
@@ -33,13 +36,20 @@ cd "$SLURM_SUBMIT_DIR"
 mkdir -p logs
 export PATH="$HOME/.local/bin:$PATH"
 
-CONDITIONS=(impossible control)
+IFS=',' read -r -a CONDITIONS <<< "${PROJECT_P3I_CONDITIONS:-impossible,control}"
 INDEX="${SLURM_ARRAY_TASK_ID:-0}"
 if [ "$INDEX" -lt 0 ] || [ "$INDEX" -ge "${#CONDITIONS[@]}" ]; then
     echo "FATAL: array index $INDEX does not map to a condition"
     exit 2
 fi
 CONDITION="${CONDITIONS[$INDEX]}"
+case "$CONDITION" in
+    impossible|control|mixed25) ;;
+    *)
+        echo "FATAL: condition must be impossible, control, or mixed25; got $CONDITION"
+        exit 2
+        ;;
+esac
 ARM="C"
 
 nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
