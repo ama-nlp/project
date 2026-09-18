@@ -37,6 +37,7 @@ sbatch slurm/generate.sbatch C 0   # Qwen3-8B, full set, one arm
 sbatch --nodelist=gnode061 slurm/phase3.sbatch  # P3 Arms A/B/C, 3 rounds
 sbatch --nodelist=gnode061 slurm/phase3b.sbatch # P3b repaired Arms A/B/C
 sbatch --nodelist=gnode061 slurm/impossible.sbatch # P3i Arm C, impossible + control
+sbatch --nodelist=gnode061 slurm/visibility.sbatch # P3v Arm C, 4-cell visibility diagnostic
 ```
 
 `setup` runs under SLURM rather than on the login node: the login node is
@@ -59,6 +60,8 @@ memory-capped and `uv sync` aborts there while unpacking torch.
 | `src/project/phase3.py` | A/B/C pilot with stop-on-PASS Round 1/2/3 conversations |
 | `src/project/phase3b.py` | P3b entry point for the repaired evaluator and revised frames |
 | `src/project/phase3_analysis.py` | round validation, arm metrics, and P3 gate report |
+| `src/project/audit.py` | versioned action-only outcome sidecars; never CoT intent |
+| `src/project/visibility.py` | matched grader/prompt and evaluator for P3v |
 | `scripts/make_calibration_set.py` | P2 permissive-frame corpus (adopted, not instructed, hack intent) |
 | `scripts/make_impossible_set.py` | P3i hidden impossible-test suite (see docs/phase3i.md) |
 | `scripts/make_impossiblebench_set.py` | ImpossibleBench (Impossible-LiveCodeBench) conversion for P3i |

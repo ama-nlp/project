@@ -232,6 +232,7 @@ def main() -> None:
     from .impossible_run import generate as impossible_generate
     from .phase3 import generate as phase3_generate
     from .phase3b import generate as phase3b_generate
+    from .visibility_run import generate as visibility_generate
 
     fire.Fire(
         {
@@ -240,5 +241,6 @@ def main() -> None:
             "phase3": phase3_generate,
             "phase3b": phase3b_generate,
             "impossible": impossible_generate,
+            "visibility": visibility_generate,
         }
     )
