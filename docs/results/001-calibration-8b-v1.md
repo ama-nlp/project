@@ -1,5 +1,9 @@
 # Run 001 — Qwen3-8B calibration v1
 
+## Change from previous run
+
+This was a new direction: the first dedicated calibration run for building a positive/negative corpus for the verbalised-intent judge. It had no earlier calibration run to modify.
+
 ## Run metadata
 
 - Account / job: `revan@ada.iiit.ac.in`, Slurm `2695209` (`calib-set`)

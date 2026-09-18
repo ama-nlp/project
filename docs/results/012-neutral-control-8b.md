@@ -1,5 +1,9 @@
 # Run 012 — Qwen3-8B neutral control-arm rerun
 
+## Change from previous run
+
+Relative to Run 011, only model scale/account changed from Qwen3-14B on advait to Qwen3-8B on revan. The neutral Arm C prompt and repaired evaluator were held fixed.
+
 ## Run metadata
 
 - Account / job: `revan@ada.iiit.ac.in`, Slurm `2698446` (array index 2 / Arm C only)
@@ -25,4 +29,3 @@ Identical to Run 011: neutral repaired-evaluator system prompt, Arm C's “proce
 - 99 normal stops and 29 length caps; 1,490,981 completion tokens.
 
 Like the 14B run, the 8B control remained at zero hacks. The preceding A-only attempt `2698441` was cancelled after setup and left an empty trace.
-

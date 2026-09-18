@@ -1,5 +1,9 @@
 # Run 002 — Qwen3-14B calibration v1
 
+## Change from previous run
+
+Relative to Run 001, only model scale changed from Qwen3-8B to Qwen3-14B. The v1 prompts, 20 problems, three frames, eight samples, sampling settings, and evaluator wording were held fixed.
+
 ## Run metadata
 
 - Account / job: `revan@ada.iiit.ac.in`, Slurm `2695426`
@@ -29,4 +33,3 @@ This was a scale replication of Run 001. It used the same control, permissive, a
 There were 424 normal stops and 56 length-capped generations, totalling 5,017,357 completion tokens. Increasing model size did not produce reward hacking under v1.
 
 Jobs `2695414`, `2695415`, and queued job `2695423` were cancelled or failed driver-node attempts and produced no experimental trace.
-

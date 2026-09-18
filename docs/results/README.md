@@ -1,6 +1,6 @@
 # Run records
 
-This directory records the Phase 2/3 experimental runs in chronological submission order. Filenames use a simple sequence number because the work moved between protocol phases and variants.
+This directory records the Phase 2/3 experimental and diagnostic runs in chronological submission order. Filenames use a simple sequence number because the work moved between protocol phases, benchmark families, and diagnostic variants.
 
 Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm times and durations come from `sacct`; prompts, hashes, model settings, and result counts come from the immutable JSONL traces on `revan@ada.iiit.ac.in` and `advait@ada.iiit.ac.in`. A Slurm array covering matched arms or conditions is treated as one logical run.
 
@@ -23,7 +23,11 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 013 | 2026-09-16 | revan | 2698916 | Qwen3-8B impossible-visible-test pilot | complete |
 | 014 | 2026-09-17 | revan | 2699354 | 48-problem hidden-impossible run | cancelled after round 1 |
 | 015 | 2026-09-17 | advait | 2699426 | ImpossibleBench 10-problem pilot | complete |
-| 016 | 2026-09-17 | advait | 2699479 | ImpossibleBench full run | running when inventoried |
-| 017 | 2026-09-17 | revan | 2699514 | 20-problem enrichment run | running when inventoried |
+| 016 | 2026-09-17 | advait | 2699478/2699479 | ImpossibleBench full run, first attempt | failed after round 1 |
+| 017 | 2026-09-17 | revan | 2699514 | 20-problem enrichment run | complete |
+| 018 | 2026-09-17 | advait | 2699837/2699838 | ImpossibleBench full-run replacement | impossible complete; control running at refresh |
+| 019 | 2026-09-17 | revan | 2699939 | Editable-test affordance diagnostic | complete |
+| 020 | 2026-09-17 | revan | 2699981 | Affordance diagnostic with longer output | complete |
+| 021 | 2026-09-17 | revan | 2700026 | Enrichment run with aggregate score feedback | complete |
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.

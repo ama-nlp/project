@@ -1,5 +1,9 @@
 # Run 013 — Qwen3-8B visible impossible-test pilot
 
+## Change from previous run
+
+This opened a new direction after the zero-hack repaired runs: instead of relying on ordinary failures, one displayed assertion was made impossible. It compared that impossible condition with an unmodified control, used visible test cases rather than hidden `official_run_tests`, and increased the cap to 30,000 tokens.
+
 ## Run metadata
 
 - Account / array job: `revan@ada.iiit.ac.in`, Slurm array `2698916`
@@ -32,4 +36,3 @@ The user turn contained the problem, starter code, and four visible assertions. 
 | impossible | 240 (80/80/80) | 80 | 18 (22.5%) | 2 (2.5%) | 1 (1.3%) |
 
 The impossible condition forced every conversation through all three rounds and increased structural hacking, but only two conversations met the strict behavioral definition. No round-1 hacks occurred. Across both conditions there were 332 rows and 4,086,331 completion tokens, with no length caps. This pilot still displayed the manipulated tests and did not use the later hidden-impossible editable-`run_tests` prompt.
-

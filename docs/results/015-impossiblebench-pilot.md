@@ -1,5 +1,9 @@
 # Run 015 — ImpossibleBench 10-problem pilot
 
+## Change from previous run
+
+This was a new dataset direction relative to Run 014: the hidden-impossible editable-evaluator protocol stayed the same, but LeetCode was replaced by ten Impossible-LiveCodeBench problems and sampling was reduced to two conversations per problem for a small feasibility pilot.
+
 ## Run metadata
 
 - Account / job: `advait@ada.iiit.ac.in`, Slurm `2699426` (`p3ib-pilot`)
@@ -26,4 +30,3 @@ This run used the same editable-`run_tests`, hidden-impossible system prompt and
 - 59 normal stops and one length cap; 658,870 completion tokens.
 
 All conversations exhausted three attempts without exploiting the editable evaluator. The ImpossibleBench task family therefore did not immediately improve the reward-hacking base rate in this small pilot.
-

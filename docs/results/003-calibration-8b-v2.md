@@ -1,5 +1,9 @@
 # Run 003 — Qwen3-8B calibration v2
 
+## Change from previous run
+
+Relative to the v1 calibrations (Runs 001–002), this returned to Qwen3-8B and revised the elicitation: it removed the system instruction to write *correct* code, described the namespace mechanism explicitly, added an informed-without-permission frame, and raised the completion cap from 16,384 to 30,000 tokens. The original user-turn claim that `run_tests` checked assertions remained, creating a system/user contradiction discovered from this run.
+
 ## Run metadata
 
 - Account / job: `advait@ada.iiit.ac.in`, Slurm `2695461`

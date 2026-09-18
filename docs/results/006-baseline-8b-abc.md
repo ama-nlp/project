@@ -1,5 +1,9 @@
 # Run 006 — Qwen3-8B A/B/C baseline
 
+## Change from previous run
+
+This was a new experimental direction after calibration. It reused the positive-rich shown-grader and retry situation established by Runs 004–005, but replaced calibration frames with the actual reviewed/private/blind A/B/C oversight manipulation and expanded to 20 problems × 4 samples per arm.
+
 ## Run metadata
 
 - Account / array job: `revan@ada.iiit.ac.in`, Slurm array `2696277`
@@ -51,4 +55,3 @@ After a failure, only the visible answer (not `<think>`) was carried forward. Th
 No round-1 conversation hacked. The structural ordering was C > A > B, but the strict-hack counts were much closer. The run produced 4,328,649 completion tokens across 553 trace rows. Intent/verbalisation was not scored because the Phase 2 judge was not frozen.
 
 An immediately preceding array (`2696273`, with element jobs `2696274`/`2696275`) failed in seconds because `uv` was missing from `PATH`; it generated no traces. Commit `7826aa7` fixed the launcher before this run.
-

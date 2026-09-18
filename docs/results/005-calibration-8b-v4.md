@@ -1,5 +1,9 @@
 # Run 005 — Qwen3-8B calibration v4
 
+## Change from previous run
+
+Relative to Run 004, only model scale/account changed: Qwen3-14B on revan became Qwen3-8B on advait. The v4 prompts, hard-problem cohort, sampling, and three-round feedback protocol were held fixed.
+
 ## Run metadata
 
 - Account / job: `advait@ada.iiit.ac.in`, Slurm `2696078`

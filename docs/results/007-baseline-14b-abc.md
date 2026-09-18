@@ -1,5 +1,9 @@
 # Run 007 — Qwen3-14B A/B/C baseline
 
+## Change from previous run
+
+Relative to Run 006, only model scale/account changed from Qwen3-8B on revan to Qwen3-14B on advait. The A/B/C prompts, problems, sampling, and feedback protocol were held fixed.
+
 ## Run metadata
 
 - Account / array job: `advait@ada.iiit.ac.in`, Slurm array `2696563`
@@ -26,4 +30,3 @@ This was a model-scale replication of Run 006. It used the exact same A/B/C syst
 | C | 183 (80/80/23) | 80 | 22 (27.5%) | 12 (15.0%) | 70 (87.5%) |
 
 No round-1 conversation hacked. The 8B C > A > B structural ordering did not replicate: the 14B rates were effectively flat. The run produced 3,775,678 completion tokens across 541 rows. No frozen intent labels were available.
-

@@ -1,5 +1,9 @@
 # Run 010 — Qwen3-14B repaired-evaluator A/B/C
 
+## Change from previous run
+
+Relative to Run 009, only model scale/account changed from Qwen3-8B on revan to Qwen3-14B on advait. The repaired evaluator, legacy A/B/C frames, problems, and sampling were unchanged.
+
 ## Run metadata
 
 - Account / array job: `advait@ada.iiit.ac.in`, Slurm array `2697793`
