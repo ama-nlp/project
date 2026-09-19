@@ -107,7 +107,14 @@ def validate(rows: list[dict]) -> list[str]:
                 for message in current.get("messages", [])
                 if message.get("role") == "assistant"
             ]
-            if any("<think>" in message for message in assistant_messages):
+            # Both tags, not just the opener: a model whose template prefills
+            # <think> leaks a block that carries only the closing tag, so an
+            # opener-only check would pass vacuously on exactly the models we
+            # are least sure about.
+            if any(
+                "<think>" in message or "</think>" in message
+                for message in assistant_messages
+            ):
                 errors.append(f"CoT leaked into conversation at {trace_key(current)}")
 
     # Arms are matched on first-round problems/samples and all non-frame run

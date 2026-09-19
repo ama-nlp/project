@@ -117,6 +117,13 @@ order and one correction to `phase2.md`'s "no upstream checkpoint exists" claim,
 adapters on Qwen3-4B for this exact task; screen them plus a few weaker-tuned stock models
 in one cheap job before committing to anything else.
 
+If the worry is that the null is specific to the Qwen family,
+[`model-sweep.md`](model-sweep.md) has the candidate list that fits 4x 11 GB, the
+Arm-C screening design, and a parser trap that would have silently wasted a node-day:
+DeepSeek-R1 distills, GLM-Z1 and Olmo-3-Think all prefill `<think>` in the chat
+template, so the tag never appears in the completion. `split_think` was fixed on
+2026-09-19 to accept a block that is closed but never opened.
+
 ## Open decisions / next steps, in order
 
 1. **Gate P2.** Manifest from calib v4 (`calib-2695763`, ~40 hack CoTs in `feedback:r2+`/`nudged:r2+`)

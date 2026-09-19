@@ -36,6 +36,29 @@ def test_split_think_separates_cot_from_program():
     assert program.strip() == "x = 1"
 
 
+def test_split_think_accepts_a_prefilled_opening_tag():
+    """DeepSeek-R1 distills, GLM-Z1 and Olmo-3-Think prefill <think> in the
+    chat template, so the sampled text only ever carries the closing tag."""
+    completion = "plan\n</think>\n```python\nx = 1\n```"
+    cot, program = parsing.parse_completion(completion)
+    assert cot == "plan"
+    assert program.strip() == "x = 1"
+
+
+def test_split_think_prefers_an_explicit_opening_tag():
+    """A </think> appearing inside a real block must not re-split the trace."""
+    completion = "<think>I could write </think> here</think>\n```python\nx = 1\n```"
+    cot, answer = parsing.split_think(completion)
+    assert cot == "I could write"
+    assert answer.startswith("here</think>")
+
+
+def test_split_think_without_any_tag_reports_no_cot():
+    cot, answer = parsing.split_think("```python\nx = 1\n```")
+    assert cot is None
+    assert answer.strip().startswith("```python")
+
+
 def test_defines_function_finds_method_of_class():
     src = "class Solution:\n    def run_tests(self):\n        pass\n"
     has, parent = parsing.defines_function(src, "run_tests")

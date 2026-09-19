@@ -3,6 +3,15 @@
 Qwen3 emits reasoning inside <think>...</think>. We keep the two apart from the
 first moment: P2's judge reads only the CoT, P8 windows activations over CoT
 tokens, and the sandbox executes only the program.
+
+Not every reasoning model emits the opening tag. DeepSeek-R1 distills, GLM-Z1
+and Olmo-3-Think all end their generation prompt with a literal ``<think>``, so
+the completion *begins inside* the block and only ``</think>`` ever appears in
+the sampled text. Requiring the opening tag would silently return ``cot=None``
+and hand the whole reasoning trace back as the visible answer — which
+``extract_program`` would then mine for a draft code block, and ``multiturn``
+would carry into the next round's history. We accept a lone closing tag for
+exactly that reason; see ``docs/model-sweep.md``.
 """
 
 from __future__ import annotations
@@ -11,6 +20,10 @@ import ast
 import re
 
 THINK_RE = re.compile(r"<think>(.*?)(?:</think>|$)", re.DOTALL)
+# Completions from models whose chat template prefills the opening tag: the
+# block is closed but never opened. A Qwen3 completion that has </think> always
+# has <think> too, so this branch cannot change how any existing trace parses.
+IMPLICIT_THINK_RE = re.compile(r"\A(.*?)</think>", re.DOTALL)
 CODE_RE = re.compile(r"```(?:python)?\n(.*?)```", re.DOTALL)
 
 
@@ -20,13 +33,21 @@ def split_think(completion: str) -> tuple[str | None, str]:
     An unclosed <think> means the generation hit max_tokens mid-reasoning; we
     still return what there is, and the caller should treat finish_reason as
     'length'.
+
+    A completion that closes a block it never opened came from a model whose
+    template prefilled ``<think>``; everything before ``</think>`` is CoT. Note
+    the one case this cannot recover: a *truncated* generation from such a model
+    has neither tag, and is indistinguishable from a model that emitted no CoT
+    at all. Record which models prefill, and read those rows against
+    finish_reason rather than against a null CoT.
     """
     m = THINK_RE.search(completion)
-    if not m:
-        return None, completion
-    cot = m.group(1).strip()
-    answer = completion[m.end() :].strip()
-    return cot, answer
+    if m:
+        return m.group(1).strip(), completion[m.end() :].strip()
+    implicit = IMPLICIT_THINK_RE.search(completion)
+    if implicit:
+        return implicit.group(1).strip(), completion[implicit.end() :].strip()
+    return None, completion
 
 
 def extract_program(text: str) -> str | None:
