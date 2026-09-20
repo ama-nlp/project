@@ -114,7 +114,12 @@ echo "problem set $DATASET sha256 $(sha256sum "$DATASET" | cut -d' ' -f1)"
 echo "variant set $VARIANTS sha256 $(sha256sum "$VARIANTS" | cut -d' ' -f1)"
 
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
-MODEL=$(stage_model "${PROJECT_MODEL:-Qwen/Qwen3-8B}")
+MODEL_ID="${PROJECT_MODEL:-Qwen/Qwen3-8B}"
+MODEL=$(stage_model "$MODEL_ID")
+MODEL_META_ARGS=(--model_id "${PROJECT_MODEL_ID:-$MODEL_ID}")
+if [ -n "${PROJECT_MODEL_REVISION:-}" ]; then
+    MODEL_META_ARGS+=(--model_revision "$PROJECT_MODEL_REVISION")
+fi
 
 export TOKENIZERS_PARALLELISM=false
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-40}"
@@ -139,6 +144,7 @@ echo "P3i ($P3I_SET) Arm $ARM; condition $CONDITION; model $MODEL; run $RUN_ID"
     --timeout "${PROJECT_TIMEOUT:-$TIMEOUT}" \
     --backend vllm \
     --model "$MODEL" \
+    "${MODEL_META_ARGS[@]}" \
     "${N_ARGS[@]}" \
     --samples_per_problem "${PROJECT_P3I_K:-4}" \
     --rounds 3 \

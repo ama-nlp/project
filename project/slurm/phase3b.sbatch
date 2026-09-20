@@ -53,7 +53,12 @@ vllm_env "$VLLM_VENV"
 VIRTUAL_ENV="$VLLM_VENV" uv pip install --quiet -e .
 
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
-MODEL=$(stage_model "${PROJECT_MODEL:-Qwen/Qwen3-8B}")
+MODEL_ID="${PROJECT_MODEL:-Qwen/Qwen3-8B}"
+MODEL=$(stage_model "$MODEL_ID")
+MODEL_META_ARGS=(--model_id "${PROJECT_MODEL_ID:-$MODEL_ID}")
+if [ -n "${PROJECT_MODEL_REVISION:-}" ]; then
+    MODEL_META_ARGS+=(--model_revision "$PROJECT_MODEL_REVISION")
+fi
 
 export TOKENIZERS_PARALLELISM=false
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-40}"
@@ -65,6 +70,7 @@ echo "Phase 3b Arm $ARM; model $MODEL; run $RUN_ID"
     --arm "$ARM" \
     --backend vllm \
     --model "$MODEL" \
+    "${MODEL_META_ARGS[@]}" \
     --n "${PROJECT_P3B_N:-20}" \
     --samples_per_problem "${PROJECT_P3B_K:-4}" \
     --rounds 3 \

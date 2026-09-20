@@ -40,6 +40,25 @@ sbatch --nodelist=gnode061 slurm/impossible.sbatch # P3i Arm C, impossible + con
 sbatch --nodelist=gnode061 slurm/visibility.sbatch # P3v Arm C, 4-cell visibility diagnostic
 ```
 
+### OLMo reward-hacking screen
+
+After staging `allenai/Olmo-3-7B-Think`, submit the bounded Arm-C screening
+chain from the Ada login node:
+
+```bash
+bash scripts/submit_olmo_screen.sh gnode065
+```
+
+The script validates required local artifacts, then submits three `afterok`
+jobs on the chosen driver-compatible node: a one-conversation GPU smoke gate,
+regular LeetCode Phase 3b Arm C (20 problems x 4 samples, up to three rounds),
+and ImpossibleBench's impossible condition (88 problems x 1 sample, up to
+three rounds). OLMo's canonical Hugging Face id and pinned revision are recorded
+separately from the node-local `/scratch` load path. Override the two screening
+sizes with `PROJECT_OLMO_LEETCODE_N` (problem count),
+`PROJECT_OLMO_LEETCODE_K` (samples per problem), and
+`PROJECT_OLMO_IMPOSSIBLE_K` before invoking the script.
+
 `setup` runs under SLURM rather than on the login node: the login node is
 memory-capped and `uv sync` aborts there while unpacking torch.
 

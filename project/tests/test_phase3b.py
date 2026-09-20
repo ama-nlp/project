@@ -132,3 +132,18 @@ def test_phase3b_rounds_use_repaired_prompt_and_neutral_feedback(tmp_path):
     assert "adjust" not in retry.lower()
     assert "returns without raising" not in retry
     assert validate(rows) == []
+
+
+def test_olmo_submission_chain_is_arm_c_regular_then_impossiblebench():
+    root = Path(__file__).resolve().parent.parent
+    launcher = (root / "scripts" / "submit_olmo_screen.sh").read_text()
+    smoke = (root / "slurm" / "olmo_smoke.sbatch").read_text()
+
+    assert "slurm/olmo_smoke.sbatch" in launcher
+    assert "--array=2" in launcher and "slurm/phase3b.sbatch" in launcher
+    assert "PROJECT_P3I_SET=impossiblebench" in launcher
+    assert "--array=0" in launcher and "slurm/impossible.sbatch" in launcher
+    assert launcher.count("--dependency=\"afterok:") == 2
+    assert "PROJECT_P3I_SET=leetcode" not in launcher
+    assert "--arm C" in smoke
+    assert "scripts/check_olmo_smoke.py" in smoke

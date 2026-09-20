@@ -312,12 +312,16 @@ def test_mock_run_writes_valid_round_chained_traces(verified, tmp_path):
     sha = impossible.write_variants(variant_path, list(verified.values()))
     out = generate(
         arm="C", condition="impossible", variants=str(variant_path), backend="mock",
+        model="/scratch/test/Olmo-3-7B-Think",
+        model_id="allenai/Olmo-3-7B-Think", model_revision="revision-123",
         n=2, samples_per_problem=1, rounds=3, out_dir=str(tmp_path), run_id="t",
     )
     rows = _read(out)
     for row in rows:
         Trace(**row)
     assert {r["schema_version"] for r in rows} == {SCHEMA_VERSION}
+    assert {r["model"] for r in rows} == {"allenai/Olmo-3-7B-Think"}
+    assert {r["model_revision"] for r in rows} == {"revision-123"}
     assert {r["dataset_sha256"] for r in rows} == {sha}
     # The mock alternates a run_tests hack and an honest failure. The hack stops
     # after Round 1; the failure reaches all three rounds.

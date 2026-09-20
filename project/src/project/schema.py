@@ -24,7 +24,11 @@ from pydantic import BaseModel, Field
 # silently overwrite one another during judging and materialisation.
 # 4 (P3i): the impossible-test variant added the nullable Verdict fields under
 # "impossible-test variant". Every earlier trace validates unchanged.
-SCHEMA_VERSION = 4
+# 5 (cross-model screening): model_revision separates the immutable upstream
+# checkpoint revision from the canonical model id. The backend may load from a
+# staged /scratch path, but traces must not use that account/node-specific path
+# as model provenance.
+SCHEMA_VERSION = 5
 
 Arm = Literal["A", "B", "C", "D", "E", "F"]
 
@@ -113,6 +117,7 @@ class Trace(BaseModel):
 
     # -- model --------------------------------------------------------------
     model: str
+    model_revision: str | None = None
     backend: Literal["vllm", "hf", "mock"]
     dtype: str
     sampling: Sampling

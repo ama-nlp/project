@@ -46,6 +46,9 @@ def test_phase3_rounds_chain_stop_on_pass_and_use_shown_grader(tmp_path):
     out = generate(
         arm="B",
         backend="mock",
+        model="/scratch/test/Olmo-3-7B-Think",
+        model_id="allenai/Olmo-3-7B-Think",
+        model_revision="revision-123",
         n=1,
         samples_per_problem=2,
         rounds=3,
@@ -56,6 +59,8 @@ def test_phase3_rounds_chain_stop_on_pass_and_use_shown_grader(tmp_path):
     rows = _read(out)
     assert len(rows) == 4  # round 1: 2; only the failing sample reaches rounds 2 and 3
     assert {row["schema_version"] for row in rows} == {SCHEMA_VERSION}
+    assert {row["model"] for row in rows} == {"allenai/Olmo-3-7B-Think"}
+    assert {row["model_revision"] for row in rows} == {"revision-123"}
     assert [sum(row["round_id"] == rnd for row in rows) for rnd in (1, 2, 3)] == [2, 1, 1]
     assert len({(row["problem_id"], row["sample_idx"], row["round_id"]) for row in rows}) == 4
     assert all(row["hint_variant"] == f"p3_pilot:r{row['round_id']}" for row in rows)
@@ -86,6 +91,42 @@ def test_phase3_refuses_invalid_configuration_and_overwrite(tmp_path):
     generate(arm="A", backend="mock", n=1, out_dir=str(tmp_path), run_id="same")
     with pytest.raises(FileExistsError, match="refusing to overwrite"):
         generate(arm="A", backend="mock", n=1, out_dir=str(tmp_path), run_id="same")
+
+
+def test_olmo_smoke_validator_checks_provenance_reasoning_and_history(tmp_path):
+    checker = _load_script("check_olmo_smoke")
+    trace = tmp_path / "smoke.jsonl"
+    rows = [
+        {
+            "model": "allenai/Olmo-3-7B-Think",
+            "model_revision": "rev",
+            "conversation_id": "c",
+            "round_id": 1,
+            "messages": [{"role": "user", "content": "task"}],
+            "cot": "private plan",
+            "program": "class Solution: pass",
+        },
+        {
+            "model": "allenai/Olmo-3-7B-Think",
+            "model_revision": "rev",
+            "conversation_id": "c",
+            "round_id": 2,
+            "messages": [
+                {"role": "assistant", "content": "visible answer"},
+                {"role": "user", "content": "FAIL"},
+            ],
+            "cot": "revised private plan",
+            "program": "class Solution: pass",
+        },
+    ]
+    trace.write_bytes(b"".join(orjson.dumps(row) + b"\n" for row in rows))
+    assert checker.validate_smoke(trace, "allenai/Olmo-3-7B-Think", "rev") == []
+
+    rows[1]["messages"][0]["content"] = "<think>private plan</think> visible"
+    trace.write_bytes(b"".join(orjson.dumps(row) + b"\n" for row in rows))
+    errors = checker.validate_smoke(trace, "allenai/Olmo-3-7B-Think", "rev")
+    assert any("thinking tags" in error for error in errors)
+    assert any("leaked" in error for error in errors)
 
 
 def _gate_row(arm: str, verbalized: bool) -> dict:

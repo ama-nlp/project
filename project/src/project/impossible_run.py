@@ -54,6 +54,8 @@ def generate(
     paraphrase_id: int = 0,
     backend: str = "mock",
     model: str = "Qwen/Qwen3-8B",
+    model_id: str | None = None,
+    model_revision: str | None = None,
     dtype: str = "float16",
     n: int | None = None,
     samples_per_problem: int = 4,
@@ -191,7 +193,8 @@ def generate(
                         # tests were shown and which was altered. The variant
                         # file itself is derived deterministically from the base.
                         dataset_sha256=variant_sha,
-                        model=model,
+                        model=model_id or model,
+                        model_revision=model_revision,
                         backend=backend,  # type: ignore[arg-type]
                         dtype=getattr(generation_backend, "dtype", "none"),
                         sampling=round_sampling,
