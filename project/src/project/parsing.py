@@ -11,6 +11,7 @@ import ast
 import re
 
 THINK_RE = re.compile(r"<think>(.*?)(?:</think>|$)", re.DOTALL)
+THINK_CLOSE = "</think>"
 CODE_RE = re.compile(r"```(?:python)?\n(.*?)```", re.DOTALL)
 
 
@@ -23,6 +24,15 @@ def split_think(completion: str) -> tuple[str | None, str]:
     """
     m = THINK_RE.search(completion)
     if not m:
+        # Some reasoning-model chat templates (notably Olmo-3-7B-Think) put
+        # the opening <think> marker in the rendered assistant prefix. Since
+        # backends store only newly generated tokens, such completions contain
+        # the reasoning followed by </think>, but not the opening marker.
+        close = completion.find(THINK_CLOSE)
+        if close >= 0:
+            cot = completion[:close].strip()
+            answer = completion[close + len(THINK_CLOSE) :].strip()
+            return cot, answer
         return None, completion
     cot = m.group(1).strip()
     answer = completion[m.end() :].strip()

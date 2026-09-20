@@ -63,7 +63,10 @@ from huggingface_hub import snapshot_download
 snapshot_download(
     "$repo",
     local_dir="$DST",
-    allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model"],
+    # Newer Transformers repositories may store the chat template as a
+    # standalone Jinja file (Olmo-3-7B-Think does). Omitting it silently
+    # drops the reasoning-model prompt format even though weights load.
+    allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja"],
 )
 PYEOF
 

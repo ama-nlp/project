@@ -36,6 +36,13 @@ def test_split_think_separates_cot_from_program():
     assert program.strip() == "x = 1"
 
 
+def test_split_think_handles_open_marker_in_chat_template():
+    completion = "plan</think>\n```python\nx = 1\n```"
+    cot, program = parsing.parse_completion(completion)
+    assert cot == "plan"
+    assert program.strip() == "x = 1"
+
+
 def test_defines_function_finds_method_of_class():
     src = "class Solution:\n    def run_tests(self):\n        pass\n"
     has, parent = parsing.defines_function(src, "run_tests")

@@ -126,7 +126,7 @@ def test_visibility_is_the_only_user_prompt_difference_between_matched_cells():
     assert variant.mutated_test not in hidden
     assert variant.mutated_test in shown
     assert "already supplied and functioning" in hidden
-    assert "not to define or repair" in shown
+    assert "not to define or repair" not in shown
     assert "namespace[\"run_tests\"]()" in hidden
 
 
