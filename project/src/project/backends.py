@@ -45,6 +45,7 @@ from .schema import Sampling
 class Generation:
     text: str
     finish_reason: str | None = None
+    error: str | None = None
     n_prompt_tokens: int | None = None
     n_completion_tokens: int | None = None
 
@@ -358,6 +359,7 @@ class VLLMBackend:
         # just above the measured concurrency ceiling.
         n_seqs = max_num_seqs or int(os.environ.get("PROJECT_MAX_NUM_SEQS", "16"))
         max_model_len = int(os.environ.get("PROJECT_MAX_MODEL_LEN") or max_model_len)
+        self.max_model_len = max_model_len
         llm_kwargs = dict(
             model=model,
             dtype=dtype,
@@ -375,6 +377,12 @@ class VLLMBackend:
         self.tokenizer = self.llm.get_tokenizer()
         self._n_requests = 0
 
+    def set_request_offset(self, completed_requests: int) -> None:
+        """Continue per-request seeds exactly when an append-only run resumes."""
+        if completed_requests < 0:
+            raise ValueError("completed_requests cannot be negative")
+        self._n_requests = completed_requests
+
     def generate(self, batch: list[list[dict]], sampling: Sampling) -> list[Generation]:
         from vllm import SamplingParams as VSP
 
@@ -385,6 +393,23 @@ class VLLMBackend:
             )
             for m in batch
         ]
+        prompt_ids = [self.tokenizer.encode(text) for text in texts]
+        out: list[Generation | None] = [None] * len(texts)
+        valid_indices = []
+        for i, ids in enumerate(prompt_ids):
+            if len(ids) >= self.max_model_len:
+                out[i] = Generation(
+                    text="",
+                    finish_reason="context_length",
+                    error=(
+                        f"prompt has {len(ids)} tokens, meeting or exceeding "
+                        f"configured max_model_len={self.max_model_len}"
+                    ),
+                    n_prompt_tokens=len(ids),
+                    n_completion_tokens=0,
+                )
+            else:
+                valid_indices.append(i)
         # One seed per request, not one per run. vLLM seeds the sampler per
         # request, so a shared seed makes identical prompts produce identical
         # text: calibration run 2695209 had 62/480 exact-duplicate CoTs from
@@ -399,22 +424,19 @@ class VLLMBackend:
                 seed=sampling.seed + self._n_requests + i,
                 n=1,
             )
-            for i in range(len(texts))
+            for i in valid_indices
         ]
         self._n_requests += len(texts)
-        results = self.llm.generate(texts, params)
-        out = []
-        for r in results:
+        results = self.llm.generate([texts[i] for i in valid_indices], params) if valid_indices else []
+        for i, r in zip(valid_indices, results, strict=True):
             o = r.outputs[0]
-            out.append(
-                Generation(
-                    text=o.text,
-                    finish_reason=o.finish_reason,
-                    n_prompt_tokens=len(r.prompt_token_ids),
-                    n_completion_tokens=len(o.token_ids),
-                )
+            out[i] = Generation(
+                text=o.text,
+                finish_reason=o.finish_reason,
+                n_prompt_tokens=len(r.prompt_token_ids),
+                n_completion_tokens=len(o.token_ids),
             )
-        return out
+        return [generation for generation in out if generation is not None]
 
 
 def make_backend(name: str, model: str, **kwargs) -> Backend:

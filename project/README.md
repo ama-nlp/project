@@ -59,6 +59,15 @@ sizes with `PROJECT_OLMO_LEETCODE_N` (problem count),
 `PROJECT_OLMO_LEETCODE_K` (samples per problem), and
 `PROJECT_OLMO_IMPOSSIBLE_K` before invoking the script.
 
+The OLMo chain uses a 48k context with one active sequence per node. Each trace
+has a sibling manifest, which freezes engine/package settings that
+are not part of the sampling record. Generation is append-only and may be
+resubmitted with the same run id plus `PROJECT_RESUME=true`; resume is refused
+unless the manifest, git commit, model revision, dataset, prompt, sampling, and
+engine settings match exactly. A prompt that itself exhausts the context writes
+an explicit `finish_reason=context_length` censored trace and ends only that
+conversation rather than killing the full job.
+
 `setup` runs under SLURM rather than on the login node: the login node is
 memory-capped and `uv sync` aborts there while unpacking torch.
 
@@ -68,6 +77,7 @@ memory-capped and `uv sync` aborts there while unpacking torch.
 |---|---|
 | `data/` | frozen problem set (fetched, gitignored), sha256 in every trace |
 | `src/project/schema.py` | the trace record — every phase reads this |
+| `src/project/run_manifest.py` | strict execution provenance and safe append-only resume |
 | `src/project/data.py` | problem loading + the `run_tests()` loophole |
 | `src/project/prompts.py` | arm system prompts (P4 replaces with the real bank) |
 | `src/project/parsing.py` | CoT / program splitting |

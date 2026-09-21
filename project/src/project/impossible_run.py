@@ -19,7 +19,8 @@ from tqdm import tqdm
 from . import data, impossible, parsing, prompts, rh_eval
 from .backends import make_backend
 from .phase3 import _conversation_id, _git_sha, _pct
-from .schema import Sampling, Trace, sha256
+from .run_manifest import execution_settings, prepare_manifest, read_trace_rows
+from .schema import Sampling, Trace, Verdict, sha256
 
 HINT_PREFIX = "p3i-scored"
 
@@ -76,6 +77,7 @@ def generate(
     enable_thinking: bool = True,
     out_dir: str | None = None,
     run_id: str | None = None,
+    resume: bool = False,
 ) -> str:
     """Generate one arm under one condition and return its trace path."""
     if condition not in impossible.CONDITIONS:
@@ -119,24 +121,54 @@ def generate(
     out_dir_path = Path(out_dir or os.environ.get("PROJECT_RUNS_DIR", "runs")) / run_id
     out_dir_path.mkdir(parents=True, exist_ok=True)
     out_path = out_dir_path / f"arm{arm}_p{paraphrase_id}.jsonl"
-    if out_path.exists():
+    if out_path.exists() and not resume:
         raise FileExistsError(f"{out_path} exists; refusing to overwrite P3i traces")
+    if resume and not out_path.exists():
+        raise FileNotFoundError(f"cannot resume missing trace file {out_path}")
+    if not resume:
+        out_path.touch(exist_ok=False)
 
     sampling_base = Sampling(
         temperature=temperature, top_p=top_p, max_tokens=max_tokens, seed=seed,
         n=samples_per_problem,
     )
+    system = prompts.impossible_system_prompt(arm)
+    system_sha = sha256(system)
+    hint_prefix = f"{HINT_PREFIX}_{condition}"
+    git_sha = _git_sha()
+    manifest = prepare_manifest(
+        out_dir_path,
+        {
+            "run_id": run_id,
+            "git_sha": git_sha,
+            "dataset_sha256": variant_sha,
+            "base_dataset": str(dataset_path),
+            "problem_ids": [problem.id for problem in problems],
+            "model": model_id or model,
+            "model_revision": model_revision,
+            "dtype": dtype,
+            "arm": arm,
+            "paraphrase_id": paraphrase_id,
+            "system_prompt_sha256": system_sha,
+            "protocol": "impossible",
+            "condition": condition,
+            "rounds": rounds,
+            "samples_per_problem": samples_per_problem,
+            "timeout": timeout,
+            "sampling": sampling_base.model_dump(),
+            "execution": execution_settings(backend=backend, batch_size=batch_size),
+        },
+        resume=resume,
+        name=f"{out_path.stem}.manifest.json",
+    )
+    timestamp = manifest["created_at"]
+
     backend_kwargs = (
         {} if backend == "mock"
         else {"dtype": dtype, "micro_batch": micro_batch, "enable_thinking": enable_thinking}
     )
     generation_backend = make_backend(backend, model, **backend_kwargs)
     evaluator = impossible.ImpossibleEvaluator(timeout=timeout)
-    system = prompts.impossible_system_prompt(arm)
-    system_sha = sha256(system)
-    hint_prefix = f"{HINT_PREFIX}_{condition}"
-    timestamp = dt.datetime.now(dt.UTC).isoformat()
-    git_sha = _git_sha()
 
     items = []
     for problem in problems:
@@ -156,14 +188,52 @@ def generate(
                 }
             )
 
-    written = 0
-    round_counts: Counter[int] = Counter()
-    with out_path.open("xb") as output:
-        pending = items
-        for round_id in range(1, rounds + 1):
-            if not pending:
+    existing_rows = read_trace_rows(out_path) if resume else []
+    if existing_rows and hasattr(generation_backend, "set_request_offset"):
+        generation_backend.set_request_offset(len(existing_rows))
+    pending_by_round: dict[int, list[dict]] = {round_id: [] for round_id in range(1, rounds + 1)}
+    rows_by_conversation: dict[str, list[dict]] = {}
+    for row in existing_rows:
+        rows_by_conversation.setdefault(row.get("conversation_id") or "", []).append(row)
+    for item in items:
+        messages = item["messages"]
+        history = sorted(
+            rows_by_conversation.pop(item["conversation_id"], []),
+            key=lambda row: row.get("round_id", 1),
+        )
+        if [row.get("round_id", 1) for row in history] != list(range(1, len(history) + 1)):
+            raise ValueError(f"non-contiguous resume history for {item['conversation_id']}")
+        done = False
+        for row in history:
+            if row.get("messages") != messages:
+                raise ValueError(f"resume message history mismatch for {item['conversation_id']}")
+            verdict = Verdict.model_validate(row["verdict"])
+            round_id = row.get("round_id", 1)
+            if row.get("finish_reason") == "context_length" or verdict.hint_pass:
+                done = True
                 break
-            next_round = []
+            if round_id >= rounds:
+                done = True
+                break
+            messages = impossible.append_feedback(
+                messages,
+                row.get("completion_raw") or "",
+                verdict,
+                failed_round=round_id,
+            )
+        if not done:
+            item["messages"] = messages
+            pending_by_round[len(history) + 1].append(item)
+    if rows_by_conversation:
+        raise ValueError(f"resume trace contains unknown conversations: {sorted(rows_by_conversation)}")
+
+    written = len(existing_rows)
+    round_counts: Counter[int] = Counter(row.get("round_id", 1) for row in existing_rows)
+    with out_path.open("ab") as output:
+        for round_id in range(1, rounds + 1):
+            pending = pending_by_round[round_id]
+            if not pending:
+                continue
             round_sampling = sampling_base.model_copy(
                 update={"seed": seed + (round_id - 1) * 1_000_000}
             )
@@ -212,6 +282,7 @@ def generate(
                         cot=cot,
                         program=program,
                         finish_reason=g.finish_reason,
+                        generation_error=g.error,
                         n_prompt_tokens=g.n_prompt_tokens,
                         n_completion_tokens=g.n_completion_tokens,
                         cot_sha256=sha256(cot) if cot else None,
@@ -222,8 +293,11 @@ def generate(
                     written += 1
                     round_counts[round_id] += 1
 
-                    if not verdict.hint_pass and round_id < rounds:
-                        next_round.append(
+                    should_continue = not verdict.hint_pass and round_id < rounds
+                    if g.finish_reason == "context_length":
+                        should_continue = False
+                    if should_continue:
+                        pending_by_round[round_id + 1].append(
                             {
                                 **item,
                                 "messages": impossible.append_feedback(
@@ -236,7 +310,6 @@ def generate(
                         )
                 output.flush()
                 os.fsync(output.fileno())
-            pending = next_round
 
     print(f"\nwrote {written} P3i traces -> {out_path}  (condition {condition})")
     print("  rounds:", dict(sorted(round_counts.items())))

@@ -28,7 +28,10 @@ from pydantic import BaseModel, Field
 # checkpoint revision from the canonical model id. The backend may load from a
 # staged /scratch path, but traces must not use that account/node-specific path
 # as model provenance.
-SCHEMA_VERSION = 5
+# 6 (long-context reliability): generation_error records an explicit censored
+# row when a later-round prompt exhausts the configured context rather than
+# silently dropping that denominator or aborting the rest of the run.
+SCHEMA_VERSION = 6
 
 Arm = Literal["A", "B", "C", "D", "E", "F"]
 
@@ -141,6 +144,7 @@ class Trace(BaseModel):
     cot: str | None  # contents of <think>...</think>, stored separately
     program: str | None  # extracted ```python``` block
     finish_reason: str | None = None
+    generation_error: str | None = None
     n_prompt_tokens: int | None = None
     n_completion_tokens: int | None = None
 

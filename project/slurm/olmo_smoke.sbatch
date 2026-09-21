@@ -47,7 +47,7 @@ grep -q '<think>' "$MODEL/chat_template.jinja" \
 export TOKENIZERS_PARALLELISM=false
 export MAX_JOBS="${SLURM_CPUS_PER_TASK:-16}"
 export PROJECT_MAX_NUM_SEQS=1
-export PROJECT_MAX_MODEL_LEN=10000
+export PROJECT_MAX_MODEL_LEN=48000
 RUN_ID="${PROJECT_RUN_ID:-olmo-smoke-${SLURM_JOB_ID}}"
 
 "$VLLM_VENV/bin/project" phase3b \
@@ -59,6 +59,7 @@ RUN_ID="${PROJECT_RUN_ID:-olmo-smoke-${SLURM_JOB_ID}}"
     --n 1 \
     --samples_per_problem 1 \
     --rounds 3 \
+    --stop_on_pass false \
     --batch_size 1 \
     --max_tokens 8192 \
     --temperature 1.0 \

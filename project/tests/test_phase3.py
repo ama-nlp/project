@@ -93,6 +93,61 @@ def test_phase3_refuses_invalid_configuration_and_overwrite(tmp_path):
         generate(arm="A", backend="mock", n=1, out_dir=str(tmp_path), run_id="same")
 
 
+def test_phase3_resume_appends_only_missing_rounds_and_checks_manifest(tmp_path):
+    out = Path(generate(
+        arm="C", backend="mock", n=1, samples_per_problem=1, rounds=3,
+        batch_size=1, out_dir=str(tmp_path), run_id="resume-me",
+    ))
+    original = _read(out)
+    assert [row["round_id"] for row in original] == [1, 2, 3]
+    out.write_bytes(b"".join(orjson.dumps(row) + b"\n" for row in original[:2]))
+
+    resumed = generate(
+        arm="C", backend="mock", n=1, samples_per_problem=1, rounds=3,
+        batch_size=1, out_dir=str(tmp_path), run_id="resume-me", resume=True,
+    )
+    rows = _read(resumed)
+    assert [row["round_id"] for row in rows] == [1, 2, 3]
+    assert len({(row["conversation_id"], row["round_id"]) for row in rows}) == 3
+
+    with pytest.raises(ValueError, match="resume provenance mismatch"):
+        generate(
+            arm="C", backend="mock", n=1, samples_per_problem=1, rounds=3,
+            batch_size=2, out_dir=str(tmp_path), run_id="resume-me", resume=True,
+        )
+
+
+def test_context_length_is_recorded_and_stops_only_that_conversation(tmp_path, monkeypatch):
+    from project import phase3
+    from project.backends import Generation
+
+    class ContextBackend:
+        dtype = "float16"
+
+        def generate(self, batch, _sampling):
+            return [
+                Generation(
+                    text="",
+                    finish_reason="context_length",
+                    error="prompt has 48001 tokens",
+                    n_prompt_tokens=48001,
+                    n_completion_tokens=0,
+                )
+                for _ in batch
+            ]
+
+    monkeypatch.setattr(phase3, "make_backend", lambda *_args, **_kwargs: ContextBackend())
+    out = phase3.generate(
+        arm="C", backend="vllm", n=1, samples_per_problem=1, rounds=3,
+        batch_size=1, out_dir=str(tmp_path), run_id="context-censored",
+    )
+    rows = _read(out)
+    assert len(rows) == 1
+    assert rows[0]["finish_reason"] == "context_length"
+    assert rows[0]["generation_error"] == "prompt has 48001 tokens"
+    assert rows[0]["round_id"] == 1
+
+
 def test_olmo_smoke_validator_checks_provenance_reasoning_and_history(tmp_path):
     checker = _load_script("check_olmo_smoke")
     trace = tmp_path / "smoke.jsonl"
@@ -116,6 +171,20 @@ def test_olmo_smoke_validator_checks_provenance_reasoning_and_history(tmp_path):
                 {"role": "user", "content": "FAIL"},
             ],
             "cot": "revised private plan",
+            "program": "class Solution: pass",
+        },
+        {
+            "model": "allenai/Olmo-3-7B-Think",
+            "model_revision": "rev",
+            "conversation_id": "c",
+            "round_id": 3,
+            "messages": [
+                {"role": "assistant", "content": "visible answer"},
+                {"role": "user", "content": "FAIL"},
+                {"role": "assistant", "content": "second visible answer"},
+                {"role": "user", "content": "FAIL"},
+            ],
+            "cot": "final private plan",
             "program": "class Solution: pass",
         },
     ]

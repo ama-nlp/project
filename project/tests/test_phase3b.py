@@ -144,6 +144,11 @@ def test_olmo_submission_chain_is_arm_c_regular_then_impossiblebench():
     assert "PROJECT_P3I_SET=impossiblebench" in launcher
     assert "--array=0" in launcher and "slurm/impossible.sbatch" in launcher
     assert launcher.count("--dependency=\"afterok:") == 2
+    assert launcher.count("--kill-on-invalid-dep=yes") == 2
+    assert launcher.count("PROJECT_BATCH_SIZE=1") == 2
+    assert launcher.count("PROJECT_MAX_NUM_SEQS=1") == 2
+    assert launcher.count("PROJECT_MAX_MODEL_LEN=48000") == 2
     assert "PROJECT_P3I_SET=leetcode" not in launcher
     assert "--arm C" in smoke
+    assert "--stop_on_pass false" in smoke
     assert "scripts/check_olmo_smoke.py" in smoke

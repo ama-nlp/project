@@ -158,6 +158,50 @@ def test_vllm_keeps_default_model_impl_for_other_architectures(tmp_path, monkeyp
     assert "hf_overrides" not in calls[0]
 
 
+def test_vllm_records_overlong_prompt_without_calling_engine(tmp_path, monkeypatch):
+    from project.backends import VLLMBackend
+    from project.schema import Sampling
+
+    model = tmp_path / "Qwen3-8B"
+    model.mkdir()
+    (model / "config.json").write_text(
+        json.dumps({"architectures": ["Qwen3ForCausalLM"], "model_type": "qwen3"})
+    )
+
+    class Tokenizer:
+        def apply_chat_template(self, *_args, **_kwargs):
+            return "too many tokens"
+
+        def encode(self, _text):
+            return list(range(5))
+
+    class RecordingLLM:
+        def __init__(self, **_kwargs):
+            pass
+
+        def get_tokenizer(self):
+            return Tokenizer()
+
+        def generate(self, *_args, **_kwargs):
+            raise AssertionError("overlong prompts must not reach vLLM")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        SimpleNamespace(LLM=RecordingLLM, SamplingParams=lambda **kwargs: kwargs),
+    )
+    backend = VLLMBackend(str(model), max_model_len=5, tensor_parallel_size=1)
+    (generation,) = backend.generate(
+        [[{"role": "user", "content": "task"}]],
+        Sampling(temperature=1.0, top_p=0.95, max_tokens=4, seed=0),
+    )
+
+    assert generation.finish_reason == "context_length"
+    assert generation.n_prompt_tokens == 5
+    assert generation.n_completion_tokens == 0
+    assert "max_model_len=5" in generation.error
+
+
 def test_olmo3_rope_workaround_rejects_different_profiles():
     from project.backends import _flatten_olmo3_rope_parameters
 

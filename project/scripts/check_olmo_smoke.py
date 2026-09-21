@@ -29,6 +29,8 @@ def validate_smoke(path: Path, expected_model: str, expected_revision: str) -> l
         by_conversation.setdefault(row.get("conversation_id") or "", []).append(row)
     for conversation in by_conversation.values():
         conversation.sort(key=lambda row: row.get("round_id", 1))
+        if [row.get("round_id", 1) for row in conversation] != [1, 2, 3]:
+            errors.append("smoke conversation did not exercise all three rounds")
         earlier_cots: list[str] = []
         for row in conversation:
             messages = row.get("messages") or []

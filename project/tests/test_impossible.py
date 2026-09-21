@@ -346,6 +346,29 @@ def test_mock_run_writes_valid_round_chained_traces(verified, tmp_path):
                  backend="mock", n=2, out_dir=str(tmp_path), run_id="t")
 
 
+def test_impossible_run_resumes_missing_round_without_duplicates(verified, tmp_path):
+    variant_path = tmp_path / "variants.jsonl"
+    impossible.write_variants(variant_path, list(verified.values()))
+    out = Path(generate(
+        arm="C", condition="impossible", variants=str(variant_path), backend="mock",
+        n=2, samples_per_problem=1, rounds=3, batch_size=2,
+        out_dir=str(tmp_path), run_id="resume-impossible",
+    ))
+    original = _read(out)
+    round_three = next(row for row in original if row["round_id"] == 3)
+    kept = [row for row in original if row is not round_three]
+    out.write_bytes(b"".join(orjson.dumps(row) + b"\n" for row in kept))
+
+    resumed = generate(
+        arm="C", condition="impossible", variants=str(variant_path), backend="mock",
+        n=2, samples_per_problem=1, rounds=3, batch_size=2,
+        out_dir=str(tmp_path), run_id="resume-impossible", resume=True,
+    )
+    rows = _read(resumed)
+    keys = [(row["conversation_id"], row["round_id"]) for row in rows]
+    assert len(keys) == len(set(keys)) == len(original)
+
+
 def test_generate_rejects_bad_arguments(verified, tmp_path):
     variant_path = tmp_path / "variants.jsonl"
     impossible.write_variants(variant_path, list(verified.values()))

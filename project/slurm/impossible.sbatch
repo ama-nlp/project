@@ -153,4 +153,5 @@ echo "P3i ($P3I_SET) Arm $ARM; condition $CONDITION; model $MODEL; run $RUN_ID"
     --temperature "${PROJECT_TEMPERATURE:-1.0}" \
     --top_p "${PROJECT_TOP_P:-0.95}" \
     --seed "${PROJECT_SEED:-0}" \
+    --resume "${PROJECT_RESUME:-false}" \
     --run_id "$RUN_ID"

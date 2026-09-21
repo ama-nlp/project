@@ -26,6 +26,8 @@ def generate(
     enable_thinking: bool = True,
     out_dir: str | None = None,
     run_id: str | None = None,
+    resume: bool = False,
+    stop_on_pass: bool = True,
 ) -> str:
     return _generate(
         arm=arm,
@@ -49,4 +51,6 @@ def generate(
         out_dir=out_dir,
         run_id=run_id,
         protocol="phase3b",
+        resume=resume,
+        stop_on_pass=stop_on_pass,
     )
