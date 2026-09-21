@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import orjson
 import pytest
@@ -86,6 +89,53 @@ def test_mock_backend_ignores_gpu_only_kwargs():
     from project.backends import make_backend
 
     assert make_backend("mock", "irrelevant").name == "mock"
+
+
+def test_vllm_uses_transformers_model_impl_for_staged_olmo3(tmp_path, monkeypatch):
+    from project.backends import VLLMBackend
+
+    model = tmp_path / "Olmo-3-7B-Think"
+    model.mkdir()
+    (model / "config.json").write_text(
+        json.dumps({"architectures": ["Olmo3ForCausalLM"], "model_type": "olmo3"})
+    )
+    calls = []
+
+    class RecordingLLM:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def get_tokenizer(self):
+            return object()
+
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace(LLM=RecordingLLM))
+    VLLMBackend(str(model), tensor_parallel_size=4, max_num_seqs=1)
+
+    assert calls[0]["model_impl"] == "transformers"
+    assert calls[0]["tensor_parallel_size"] == 4
+
+
+def test_vllm_keeps_default_model_impl_for_other_architectures(tmp_path, monkeypatch):
+    from project.backends import VLLMBackend
+
+    model = tmp_path / "Qwen3-8B"
+    model.mkdir()
+    (model / "config.json").write_text(
+        json.dumps({"architectures": ["Qwen3ForCausalLM"], "model_type": "qwen3"})
+    )
+    calls = []
+
+    class RecordingLLM:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def get_tokenizer(self):
+            return object()
+
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace(LLM=RecordingLLM))
+    VLLMBackend(str(model), tensor_parallel_size=4, max_num_seqs=1)
+
+    assert "model_impl" not in calls[0]
 
 
 def test_end_to_end_mock_run_writes_valid_traces(tmp_path):

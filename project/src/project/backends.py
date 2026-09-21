@@ -31,9 +31,11 @@ dependency group installed.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from .schema import Sampling
@@ -274,6 +276,33 @@ class HFBackend:
         return out
 
 
+def _vllm_model_impl(model: str) -> str | None:
+    """Select vLLM's Transformers runner for models with no safe native runner.
+
+    vLLM 0.24 registers ``Olmo3ForCausalLM`` to its OLMo2 implementation.  With
+    Transformers 5, OLMo 3 exposes per-layer-type (nested) ``rope_parameters``
+    while that implementation expects the old flat dictionary and crashes on
+    startup with ``KeyError: 'rope_theta'``.  vLLM's Transformers modeling
+    backend supports OLMo 3 and consumes the nested configuration correctly.
+
+    The environment override is useful for future compatibility probes.  The
+    automatic branch is deliberately limited to a local, staged OLMo 3 model;
+    every other architecture retains vLLM's default native selection.
+    """
+    override = os.environ.get("PROJECT_VLLM_MODEL_IMPL")
+    if override:
+        return override
+
+    config_path = Path(model) / "config.json"
+    try:
+        config = json.loads(config_path.read_text())
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+    if "Olmo3ForCausalLM" in config.get("architectures", []):
+        return "transformers"
+    return None
+
+
 class VLLMBackend:
     name = "vllm"
 
@@ -318,7 +347,7 @@ class VLLMBackend:
         # just above the measured concurrency ceiling.
         n_seqs = max_num_seqs or int(os.environ.get("PROJECT_MAX_NUM_SEQS", "16"))
         max_model_len = int(os.environ.get("PROJECT_MAX_MODEL_LEN") or max_model_len)
-        self.llm = LLM(
+        llm_kwargs = dict(
             model=model,
             dtype=dtype,
             max_model_len=max_model_len,
@@ -327,6 +356,9 @@ class VLLMBackend:
             max_num_seqs=n_seqs,
             trust_remote_code=True,
         )
+        if model_impl := _vllm_model_impl(model):
+            llm_kwargs["model_impl"] = model_impl
+        self.llm = LLM(**llm_kwargs)
         self.tokenizer = self.llm.get_tokenizer()
         self._n_requests = 0
 
