@@ -276,31 +276,38 @@ class HFBackend:
         return out
 
 
-def _vllm_model_impl(model: str) -> str | None:
-    """Select vLLM's Transformers runner for models with no safe native runner.
-
-    vLLM 0.24 registers ``Olmo3ForCausalLM`` to its OLMo2 implementation.  With
-    Transformers 5, OLMo 3 exposes per-layer-type (nested) ``rope_parameters``
-    while that implementation expects the old flat dictionary and crashes on
-    startup with ``KeyError: 'rope_theta'``.  vLLM's Transformers modeling
-    backend supports OLMo 3 and consumes the nested configuration correctly.
-
-    The environment override is useful for future compatibility probes.  The
-    automatic branch is deliberately limited to a local, staged OLMo 3 model;
-    every other architecture retains vLLM's default native selection.
-    """
-    override = os.environ.get("PROJECT_VLLM_MODEL_IMPL")
-    if override:
-        return override
-
+def _is_staged_olmo3(model: str) -> bool:
     config_path = Path(model) / "config.json"
     try:
         config = json.loads(config_path.read_text())
     except (OSError, json.JSONDecodeError, TypeError):
-        return None
-    if "Olmo3ForCausalLM" in config.get("architectures", []):
-        return "transformers"
-    return None
+        return False
+    return "Olmo3ForCausalLM" in (config.get("architectures") or [])
+
+
+def _flatten_olmo3_rope_parameters(config):
+    """Adapt Transformers 5's nested OLMo 3 RoPE config for vLLM 0.24.
+
+    vLLM 0.24 maps OLMo 3 to its native OLMo2 tensor-parallel runner, which
+    expects one flat RoPE dictionary.  OLMo 3's full- and sliding-attention
+    profiles are identical for this checkpoint, so flattening is lossless.  Do
+    not silently apply this workaround to a future checkpoint whose profiles
+    differ.
+    """
+    rope = getattr(config, "rope_parameters", None)
+    if not isinstance(rope, dict):
+        return config
+    full = rope.get("full_attention")
+    sliding = rope.get("sliding_attention")
+    if not isinstance(full, dict) or not isinstance(sliding, dict):
+        return config
+    if full != sliding:
+        raise ValueError(
+            "vLLM 0.24 cannot safely run OLMo 3 with different full- and "
+            "sliding-attention RoPE parameters"
+        )
+    config.rope_parameters = dict(full)
+    return config
 
 
 class VLLMBackend:
@@ -356,8 +363,10 @@ class VLLMBackend:
             max_num_seqs=n_seqs,
             trust_remote_code=True,
         )
-        if model_impl := _vllm_model_impl(model):
+        if model_impl := os.environ.get("PROJECT_VLLM_MODEL_IMPL"):
             llm_kwargs["model_impl"] = model_impl
+        elif _is_staged_olmo3(model):
+            llm_kwargs["hf_overrides"] = _flatten_olmo3_rope_parameters
         self.llm = LLM(**llm_kwargs)
         self.tokenizer = self.llm.get_tokenizer()
         self._n_requests = 0

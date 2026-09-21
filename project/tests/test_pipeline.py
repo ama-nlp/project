@@ -91,7 +91,7 @@ def test_mock_backend_ignores_gpu_only_kwargs():
     assert make_backend("mock", "irrelevant").name == "mock"
 
 
-def test_vllm_uses_transformers_model_impl_for_staged_olmo3(tmp_path, monkeypatch):
+def test_vllm_flattens_equivalent_rope_profiles_for_staged_olmo3(tmp_path, monkeypatch):
     from project.backends import VLLMBackend
 
     model = tmp_path / "Olmo-3-7B-Think"
@@ -111,7 +111,16 @@ def test_vllm_uses_transformers_model_impl_for_staged_olmo3(tmp_path, monkeypatc
     monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace(LLM=RecordingLLM))
     VLLMBackend(str(model), tensor_parallel_size=4, max_num_seqs=1)
 
-    assert calls[0]["model_impl"] == "transformers"
+    assert "model_impl" not in calls[0]
+    override = calls[0]["hf_overrides"]
+    config = SimpleNamespace(
+        rope_parameters={
+            "full_attention": {"rope_type": "default", "rope_theta": 500000},
+            "sliding_attention": {"rope_type": "default", "rope_theta": 500000},
+        }
+    )
+    assert override(config) is config
+    assert config.rope_parameters == {"rope_type": "default", "rope_theta": 500000}
     assert calls[0]["tensor_parallel_size"] == 4
 
 
@@ -136,6 +145,20 @@ def test_vllm_keeps_default_model_impl_for_other_architectures(tmp_path, monkeyp
     VLLMBackend(str(model), tensor_parallel_size=4, max_num_seqs=1)
 
     assert "model_impl" not in calls[0]
+    assert "hf_overrides" not in calls[0]
+
+
+def test_olmo3_rope_workaround_rejects_different_profiles():
+    from project.backends import _flatten_olmo3_rope_parameters
+
+    config = SimpleNamespace(
+        rope_parameters={
+            "full_attention": {"rope_type": "default", "rope_theta": 500000},
+            "sliding_attention": {"rope_type": "default", "rope_theta": 10000},
+        }
+    )
+    with pytest.raises(ValueError, match="cannot safely run OLMo 3"):
+        _flatten_olmo3_rope_parameters(config)
 
 
 def test_end_to_end_mock_run_writes_valid_traces(tmp_path):
