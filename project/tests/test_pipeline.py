@@ -91,7 +91,7 @@ def test_mock_backend_ignores_gpu_only_kwargs():
     assert make_backend("mock", "irrelevant").name == "mock"
 
 
-def test_vllm_flattens_equivalent_rope_profiles_for_staged_olmo3(tmp_path, monkeypatch):
+def test_vllm_flattens_shared_theta_rope_profiles_for_staged_olmo3(tmp_path, monkeypatch):
     from project.backends import VLLMBackend
 
     model = tmp_path / "Olmo-3-7B-Think"
@@ -115,12 +115,22 @@ def test_vllm_flattens_equivalent_rope_profiles_for_staged_olmo3(tmp_path, monke
     override = calls[0]["hf_overrides"]
     config = SimpleNamespace(
         rope_parameters={
-            "full_attention": {"rope_type": "default", "rope_theta": 500000},
+            "full_attention": {
+                "rope_type": "yarn",
+                "rope_theta": 500000,
+                "factor": 8.0,
+                "original_max_position_embeddings": 8192,
+            },
             "sliding_attention": {"rope_type": "default", "rope_theta": 500000},
         }
     )
     assert override(config) is config
-    assert config.rope_parameters == {"rope_type": "default", "rope_theta": 500000}
+    assert config.rope_parameters == {
+        "rope_type": "yarn",
+        "rope_theta": 500000,
+        "factor": 8.0,
+        "original_max_position_embeddings": 8192,
+    }
     assert calls[0]["tensor_parallel_size"] == 4
 
 

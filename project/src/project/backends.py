@@ -289,10 +289,12 @@ def _flatten_olmo3_rope_parameters(config):
     """Adapt Transformers 5's nested OLMo 3 RoPE config for vLLM 0.24.
 
     vLLM 0.24 maps OLMo 3 to its native OLMo2 tensor-parallel runner, which
-    expects one flat RoPE dictionary.  OLMo 3's full- and sliding-attention
-    profiles are identical for this checkpoint, so flattening is lossless.  Do
-    not silently apply this workaround to a future checkpoint whose profiles
-    differ.
+    expects one flat RoPE dictionary.  Its full-attention branch consumes that
+    whole dictionary, while its sliding-attention branch intentionally reads
+    only ``rope_theta`` and constructs an unscaled local RoPE.  Flattening the
+    full-attention profile therefore preserves OLMo 3's YaRN scaling as long as
+    both layer types share the same theta.  Refuse a future checkpoint that
+    violates that invariant.
     """
     rope = getattr(config, "rope_parameters", None)
     if not isinstance(rope, dict):
@@ -301,10 +303,12 @@ def _flatten_olmo3_rope_parameters(config):
     sliding = rope.get("sliding_attention")
     if not isinstance(full, dict) or not isinstance(sliding, dict):
         return config
-    if full != sliding:
+    full_theta = full.get("rope_theta")
+    sliding_theta = sliding.get("rope_theta")
+    if full_theta is None or full_theta != sliding_theta:
         raise ValueError(
-            "vLLM 0.24 cannot safely run OLMo 3 with different full- and "
-            "sliding-attention RoPE parameters"
+            "vLLM 0.24 cannot safely run OLMo 3 with missing or different "
+            "full- and sliding-attention rope_theta values"
         )
     config.rope_parameters = dict(full)
     return config
