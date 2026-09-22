@@ -13,6 +13,7 @@ import pytest
 from project import data, judge, prompts
 from project.phase3 import generate
 from project.phase3_analysis import report, validate
+from project.run_manifest import coerce_cli_bool
 from project.schema import SCHEMA_VERSION, Trace
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
@@ -81,6 +82,20 @@ def test_phase3_rounds_chain_stop_on_pass_and_use_shown_grader(tmp_path):
         for row in rows
     )
     assert validate(rows) == []
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(False, False), (True, True), ("false", False), ("False", False), ("0", False),
+     ("true", True), ("True", True), ("1", True)],
+)
+def test_cli_boole_are_normalized(value, expected):
+    assert coerce_cli_bool(value, name="option") is expected
+
+
+def test_cli_boolean_rejects_invalid_value():
+    with pytest.raises(ValueError, match="option must be a boolean"):
+        coerce_cli_bool("sometimes", name="option")
 
 
 def test_phase3_refuses_invalid_configuration_and_overwrite(tmp_path):

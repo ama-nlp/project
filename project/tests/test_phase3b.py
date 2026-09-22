@@ -140,6 +140,8 @@ def test_olmo_submission_chain_is_arm_c_regular_then_impossiblebench():
     root = Path(__file__).resolve().parent.parent
     launcher = (root / "scripts" / "submit_olmo_screen.sh").read_text()
     smoke = (root / "slurm" / "olmo_smoke.sbatch").read_text()
+    phase3b_job = (root / "slurm" / "phase3b.sbatch").read_text()
+    impossible_job = (root / "slurm" / "impossible.sbatch").read_text()
 
     assert "slurm/olmo_smoke.sbatch" in launcher
     assert "--array=2" in launcher and "slurm/phase3b.sbatch" in launcher
@@ -156,3 +158,5 @@ def test_olmo_submission_chain_is_arm_c_regular_then_impossiblebench():
     assert DefaultParseValue("False") is False
     assert DefaultParseValue("false") == "false"
     assert "scripts/check_olmo_smoke.py" in smoke
+    assert '--resume "${PROJECT_RESUME:-False}"' in phase3b_job
+    assert '--resume "${PROJECT_RESUME:-False}"' in impossible_job

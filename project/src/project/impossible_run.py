@@ -19,7 +19,7 @@ from tqdm import tqdm
 from . import data, impossible, parsing, prompts, rh_eval
 from .backends import make_backend
 from .phase3 import _conversation_id, _git_sha, _pct
-from .run_manifest import execution_settings, prepare_manifest, read_trace_rows
+from .run_manifest import coerce_cli_bool, execution_settings, prepare_manifest, read_trace_rows
 from .schema import Sampling, Trace, Verdict, sha256
 
 HINT_PREFIX = "p3i-scored"
@@ -77,9 +77,11 @@ def generate(
     enable_thinking: bool = True,
     out_dir: str | None = None,
     run_id: str | None = None,
-    resume: bool = False,
+    resume: bool | str = False,
 ) -> str:
     """Generate one arm under one condition and return its trace path."""
+    resume = coerce_cli_bool(resume, name="resume")
+    enable_thinking = coerce_cli_bool(enable_thinking, name="enable_thinking")
     if condition not in impossible.CONDITIONS:
         raise ValueError(f"condition must be one of {impossible.CONDITIONS}, got {condition!r}")
     if arm != "C":

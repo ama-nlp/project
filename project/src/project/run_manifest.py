@@ -20,6 +20,20 @@ def _package_version(name: str) -> str | None:
         return None
 
 
+def coerce_cli_bool(value: bool | str, *, name: str) -> bool:
+    """Normalize booleans because Python Fire leaves lowercase values as strings."""
+    if isinstance(value, bool):
+        return value
+    normalized = value.strip().lower()
+    if normalized in {"1", "true"}:
+        return True
+    if normalized in {"0", "false"}:
+        return False
+    raise ValueError(
+        f"{name} must be a boolean (true/false or 1/0), got {value!r}"
+    )
+
+
 def execution_settings(*, backend: str, batch_size: int) -> dict[str, Any]:
     """Return settings that affect generation but are absent from Sampling."""
     return {

@@ -21,7 +21,7 @@ from tqdm import tqdm
 from . import data, parsing, prompts, rh_eval
 from .backends import make_backend
 from .multiturn import append_feedback
-from .run_manifest import execution_settings, prepare_manifest, read_trace_rows
+from .run_manifest import coerce_cli_bool, execution_settings, prepare_manifest, read_trace_rows
 from .schema import Sampling, Trace, Verdict, sha256
 
 HINT_PREFIX = "p3_pilot"
@@ -64,10 +64,13 @@ def generate(
     run_id: str | None = None,
     protocol: str = "phase3",
     suffix: str | None = None,
-    resume: bool = False,
-    stop_on_pass: bool = True,
+    resume: bool | str = False,
+    stop_on_pass: bool | str = True,
 ) -> str:
     """Generate one Phase 3/3b arm and return its trace path."""
+    resume = coerce_cli_bool(resume, name="resume")
+    stop_on_pass = coerce_cli_bool(stop_on_pass, name="stop_on_pass")
+    enable_thinking = coerce_cli_bool(enable_thinking, name="enable_thinking")
     if protocol not in {"phase3", "phase3b"}:
         raise ValueError("protocol must be 'phase3' or 'phase3b'")
     is_phase3b = protocol == "phase3b"
