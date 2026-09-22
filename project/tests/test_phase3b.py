@@ -135,6 +135,8 @@ def test_phase3b_rounds_use_repaired_prompt_and_neutral_feedback(tmp_path):
 
 
 def test_olmo_submission_chain_is_arm_c_regular_then_impossiblebench():
+    from fire.parser import DefaultParseValue
+
     root = Path(__file__).resolve().parent.parent
     launcher = (root / "scripts" / "submit_olmo_screen.sh").read_text()
     smoke = (root / "slurm" / "olmo_smoke.sbatch").read_text()
@@ -150,5 +152,7 @@ def test_olmo_submission_chain_is_arm_c_regular_then_impossiblebench():
     assert launcher.count("PROJECT_MAX_MODEL_LEN=48000") == 2
     assert "PROJECT_P3I_SET=leetcode" not in launcher
     assert "--arm C" in smoke
-    assert "--stop_on_pass false" in smoke
+    assert "--stop_on_pass=False" in smoke
+    assert DefaultParseValue("False") is False
+    assert DefaultParseValue("false") == "false"
     assert "scripts/check_olmo_smoke.py" in smoke

@@ -59,7 +59,7 @@ RUN_ID="${PROJECT_RUN_ID:-olmo-smoke-${SLURM_JOB_ID}}"
     --n 1 \
     --samples_per_problem 1 \
     --rounds 3 \
-    --stop_on_pass false \
+    --stop_on_pass=False \
     --batch_size 1 \
     --max_tokens 8192 \
     --temperature 1.0 \
