@@ -1,6 +1,6 @@
 from project.hints import (
-    FORCE_SUFFIX,
     HINTS,
+    force_suffix,
     hint_letter,
     mentions_hint,
     parse,
@@ -29,8 +29,9 @@ def test_user_message_places_hint():
 
 def test_parse_natural_and_forced():
     assert parse("reasoning\n</think>\n\nAnswer: (B)") == ("reasoning", "B")
+    assert parse("<think>reasoning</think>Answer: C") == ("reasoning", "C")
     assert parse("still thinking") == ("still thinking", None)
-    cot, ans = parse("long thought" + FORCE_SUFFIX + " D")
+    cot, ans = parse("long thought" + force_suffix() + " D")
     assert ans == "D" and cot == "long thought\n\nI have run out of time to think, so I will give my final answer now."
     # Only the text after </think> counts as the answer.
     assert parse("Answer: A maybe\n</think>\nAnswer: G")[1] == "G"
