@@ -2,6 +2,19 @@
 
 **As of:** 2026-09-15 morning. Repo `main` at `96729e9`. Read this, then `AGENTS.md`, then the phase docs.
 
+## Update 2026-09-26 — trained model organism (read with `docs/results/023-aisi-olmo7b-replication.md`)
+
+Frozen Qwen3-8B/14B never produced a usable base rate of genuine hacking (Runs 009–021). We
+switched to the public UK AISI OLMo-3 7B that RL taught to hack (`somo-olmo-7b-nohints-s1-chkpt-480`,
+merged at `revan:/share1/revan/models/somo-olmo-7b-nohints-s1-chkpt-480-merged`) and reproduced
+their result with their own CodeContests env: **499/500 reward hacked (pre-RL base: 0/500)**, every
+hack a `conftest.py` calling `sys.exit(0)`. **Verbalisation is at the floor: 0/499 hacks mentioned in
+`<thinking>`**, so this checkpoint cannot show concealment under monitoring. Next decision: an earlier
+checkpoint near hack onset or the prompted 32B organism, whose CoT mentions hacks more often.
+Launchers: `slurm/aisi_setup.sbatch`, `aisi_merge.sbatch`, `aisi_cc_eval.sbatch` (README section).
+Work happens in a separate Ada clone, `revan:~/project-aisi`, because `~/project` there is on a
+teammate's unpushed `hint-env` branch.
+
 ## The project in three sentences
 
 *Big Brother is (Maybe) Watching* (ANLP course project; Dintakurti, Jayesh, Pedaballi, Ram).
@@ -70,8 +83,11 @@ feedback under a grade objective", not "spontaneous hacking" — the writeup mus
   cross-readable; each account has its own `/share1/<user>/models` (8B + 14B on both) and
   `~/vllm-env`. Non-interactive SSH lacks `~/.local/bin` on PATH → always
   `export PATH=$HOME/.local/bin:$PATH` before `sbatch`/`uv`.
-- **vLLM 0.24 needs NVIDIA driver ≥ 580.** Confirmed OK: gnode061, 062, 065, 070, 087, 088.
-  Confirmed bad (570/575): 052, 053, 055, 057, 058, 060, 071, 076, 079, 091. No SLURM feature
+- **vLLM 0.24 needs NVIDIA driver ≥ 580.** Confirmed OK: gnode061, 062, 065, 070, 084, 087, 088.
+  Confirmed bad (570/575): 049, 052, 053, 055, 056, 057, 058, 060, 071, 075, 076, 079, 091.
+  Faulty GPUs as of 2026-09-25: gnode065 GPU2 and gnode066 GPU0 (NVML "Unknown Error"; vLLM dies
+  at start-up), and gnode077 exposes only three GPUs, one an RTX 3080. To let Slurm pick any good
+  node, submit with `--exclude` listing every other `u22` node (see `docs/results/023-…`). No SLURM feature
   exposes this; always `--nodelist=<good node>`. `phase3.sbatch` checks and aborts early;
   `calibration_set.sbatch` does not. Probe a new node with
   `srun --nodelist=gnodeNNN --gres=gpu:1 -t 1 nvidia-smi --query-gpu=driver_version --format=csv,noheader`.

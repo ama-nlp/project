@@ -29,5 +29,8 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 019 | 2026-09-17 | revan | 2699939 | Editable-test affordance diagnostic | complete |
 | 020 | 2026-09-17 | revan | 2699981 | Affordance diagnostic with longer output | complete |
 | 021 | 2026-09-17 | revan | 2700026 | Enrichment run with aggregate score feedback | complete |
+| 023 | 2026-09-25 | revan | 2716150/2716151 | AISI OLMo-7B reward-hacking organism replicated (step 480 vs pre-RL base) | complete |
+
+Number 022 is left free for the Olmo-3-7B-Think screen (`scripts/submit_olmo_screen.sh`), which `origin/olmo32-hints` counts among the runs but which has no record yet.
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.
