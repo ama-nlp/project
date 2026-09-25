@@ -68,6 +68,30 @@ engine settings match exactly. A prompt that itself exhausts the context writes
 an explicit `finish_reason=context_length` censored trace and ends only that
 conversation rather than killing the full job.
 
+### AISI OLMo-7B reward-hacking replication
+
+Reproduces the UK AISI release (Golechha, Black & Bloom 2026) with their own
+CodeContests environment and eval script before any monitoring arm is added.
+The model is their seed-1 SDF/no-hints GRPO checkpoint at step 480, published
+only as a LoRA adapter on their SDF-SFT OLMo-3 7B base. From the Ada login node:
+
+```bash
+sbatch slurm/aisi_setup.sbatch   # pinned clone of their repo + separate eval venv
+sbatch slurm/aisi_merge.sbatch   # merge LoRA -> /share1/$USER/models/<name>-merged
+sbatch --nodelist=gnode065 \
+  --export=ALL,AISI_SHARE_NAME=somo-olmo-7b-nohints-s1-chkpt-480-merged,AISI_NUM_SAMPLES=20 \
+  slurm/aisi_cc_eval.sbatch      # smoke; drop AISI_NUM_SAMPLES for n=500
+```
+
+`scripts/merge_lora.py` merges without peft (`W + alpha/r * B @ A`) and refuses
+adapter features that formula does not cover; the merge job re-checks one
+module against the adapter and writes a `merge_manifest.json` with pinned
+revisions and hashes. The eval job serves the model with `vllm serve` (fp16,
+TP=4) and runs their script unmodified with `no_hints`, temperature 1.0, all
+hacks enabled, and an 8192-token completion cap. Ada has no container runtime,
+so their `local` sandbox executes model-written code directly on the node in a
+throwaway scratch directory. Outputs land in `runs/aisi-cc/`.
+
 `setup` runs under SLURM rather than on the login node: the login node is
 memory-capped and `uv sync` aborts there while unpacking torch.
 
