@@ -185,5 +185,6 @@ cd "$WORK"
         --output-dir "$RUN_DIR/results"
 ) 2>&1 | tee "$RUN_DIR/eval.log"
 
+"$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$RUN_DIR"
 echo "finished: $RUN_DIR"
 ls -la "$RUN_DIR" "$RUN_DIR/results" 2>/dev/null || true
