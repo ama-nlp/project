@@ -48,19 +48,40 @@ if ssh "$LOGIN" "test -s $SHARE/models/$NAME/config.json"; then
     exit 0
 fi
 
-export UV_CACHE_DIR="$SCRATCH/uv-cache" HF_HOME="$SCRATCH/hf" HF_HUB_ENABLE_HF_TRANSFER=1
-export UV_LINK_MODE=hardlink UV_PYTHON_PREFERENCE=managed
+export UV_CACHE_DIR="$SCRATCH/uv-cache" HF_HOME="$SCRATCH/hf"
+export UV_LINK_MODE=copy UV_PYTHON_PREFERENCE=managed
 mkdir -p "$UV_CACHE_DIR" "$HF_HOME" "$WORK"
 
-# A separate environment: llm-compressor pins its own transformers range, and
-# installing it into the shared vLLM environment could break every other job.
-[ -x "$ENV/bin/python" ] || uv venv --python 3.12 "$ENV"
-VIRTUAL_ENV="$ENV" uv pip install --quiet --torch-backend=cu128 \
-    torch "transformers>=4.57" peft llmcompressor compressed-tensors accelerate \
-    huggingface_hub hf_transfer
-"$ENV/bin/python" scripts/prepare_aisi_rh_model.py --work "$WORK" --out "$OUT" --check-only
+# Reuse the shared vLLM environment's torch 2.11+cu128, transformers and
+# compressed-tensors rather than building a fresh environment. Job 2715781 tried
+# the fresh route and spent 4 h 48 m on the torch and CUDA wheels, reaching
+# 3.7 GB at ~50 KB/s from gnode061. Only peft, llm-compressor and whatever small
+# packages they add are installed, into a separate directory on PYTHONPATH, so
+# the shared environment itself is never modified.
+VPY="${PROJECT_VLLM_VENV:-$HOME/vllm-env}/bin/python"
+EXTRA="$ENV-extra"
+[ -x "$VPY" ] || { echo "FATAL: no vLLM environment python at $VPY"; exit 1; }
 
-"$ENV/bin/python" scripts/prepare_aisi_rh_model.py --work "$WORK" --out "$OUT"
+# Ask uv what installing peft and llm-compressor into the vLLM environment
+# would change, then take only the additions. Anything it would replace or that
+# is large and already present (torch, CUDA, transformers, vLLM itself) is kept
+# as-is; the import check below catches a genuine incompatibility.
+# compressed-tensors is deliberately NOT kept: llm-compressor tracks it closely
+# (0.14 wants 0.19; the vLLM environment has 0.17), and a copy in $EXTRA only
+# shadows the shared one for this job's process.
+KEEP='^(torch|torchvision|torchaudio|triton|transformers|tokenizers|vllm|numpy|nvidia-.*|cuda-.*|safetensors|huggingface-hub)=='
+mapfile -t PKGS < <(uv pip install --dry-run --python "$VPY" peft llmcompressor 2>&1 \
+    | sed -n 's/^ + //p' | grep -Ev "$KEEP" || true)
+echo "adding to $EXTRA: ${PKGS[*]:-(nothing)}"
+rm -rf "$EXTRA"
+if [ "${#PKGS[@]}" -gt 0 ]; then
+    uv pip install --quiet --no-deps --target "$EXTRA" "${PKGS[@]}"
+fi
+export PYTHONPATH="$EXTRA${PYTHONPATH:+:$PYTHONPATH}"
+
+"$VPY" scripts/prepare_aisi_rh_model.py --work "$WORK" --out "$OUT" --check-only
+
+"$VPY" scripts/prepare_aisi_rh_model.py --work "$WORK" --out "$OUT"
 
 SIZE_GB=$(du -s -BG "$OUT" | cut -f1 | tr -dc 0-9)
 echo "built: ${SIZE_GB} GB"
