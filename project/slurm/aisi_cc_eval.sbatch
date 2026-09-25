@@ -220,7 +220,6 @@ cd "$WORK"
     export PATH="$AISI_ENV/bin:$PATH"
     export TMPDIR="$WORK/tmp"
     export HF_HOME="$SCRATCH/hf"
-    export INSPECT_LOG_DIR="$RUN_DIR/inspect-logs"
     export INSPECT_EVAL_LOG_IMAGES=false
     "$AISI_ENV/bin/python" "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py" \
         --model "openai/$SERVED" \

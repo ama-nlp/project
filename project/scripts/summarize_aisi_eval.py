@@ -89,9 +89,11 @@ def main() -> None:
     ap.add_argument("run_dir", type=Path)
     args = ap.parse_args()
 
-    logs = sorted((args.run_dir / "inspect-logs").glob("*.eval"))
+    # The AISI script writes its log under results/logs_<timestamp>/ regardless
+    # of INSPECT_LOG_DIR, so search the whole run directory.
+    logs = sorted(args.run_dir.rglob("*.eval"))
     if len(logs) != 1:
-        raise SystemExit(f"expected one .eval log in {args.run_dir}/inspect-logs, found {len(logs)}")
+        raise SystemExit(f"expected one .eval log under {args.run_dir}, found {len(logs)}")
     rows = sample_rows(logs[0])
     with (args.run_dir / "samples.jsonl").open("w") as fh:
         for row in rows:
