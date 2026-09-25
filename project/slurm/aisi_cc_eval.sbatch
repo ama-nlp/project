@@ -58,6 +58,14 @@ if [ "${DRV%%.*}" -lt 580 ]; then
     echo "FATAL: vLLM 0.24 requires driver >= 580; this node has $DRV."
     exit 1
 fi
+# A GPU that NVML cannot open still counts toward --gres but is missing from
+# nvidia-smi (gnode065 GPU2 and gnode066 GPU0, 2026-09-25); vLLM then dies in
+# start-up with NVMLError_Unknown. Fail here with the node named instead.
+N_GPUS=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+if [ "$N_GPUS" -ne 4 ] || nvidia-smi -L 2>&1 | grep -q "Unknown Error"; then
+    echo "FATAL: $(hostname) exposes $N_GPUS healthy GPUs of the 4 allocated; resubmit elsewhere."
+    exit 1
+fi
 test -x "$AISI_ENV/bin/python" || { echo "FATAL: run slurm/aisi_setup.sbatch first"; exit 1; }
 ( cd "$AISI_REPO" && test "$(git rev-parse HEAD)" = "$AISI_COMMIT" ) \
     || { echo "FATAL: $AISI_REPO is not at $AISI_COMMIT"; exit 1; }
