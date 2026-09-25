@@ -101,43 +101,81 @@ mkdir -p "$RUN_DIR" "$WORK/tmp"
 echo "model: $MODEL"
 echo "run:   $RUN_DIR"
 
-# --- server -------------------------------------------------------------------
-source "$SLURM_SUBMIT_DIR/slurm/vllm_env.sh"
-VLLM_LOG="$RUN_DIR/vllm.log"
-(
-    vllm_env "$VLLM_VENV"
-    # shellcheck disable=SC2086  # VLLM_EXTRA_ARGS is a deliberate word list
-    exec "$VLLM_VENV/bin/vllm" serve "$MODEL" \
-        --served-model-name "$SERVED" \
-        --dtype float16 \
-        --tensor-parallel-size 4 \
-        --max-model-len "$MAX_MODEL_LEN" \
-        --max-num-seqs "$MAX_SEQS" \
-        --gpu-memory-utilization 0.90 \
-        --chat-template "$MODEL/chat_template.jinja" \
-        --override-generation-config "{\"max_new_tokens\": $MAX_NEW_TOKENS}" \
-        --host 127.0.0.1 --port "$PORT" \
-        --api-key inspectai \
-        ${VLLM_EXTRA_ARGS:-}
-) >"$VLLM_LOG" 2>&1 &
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true; rm -rf "$WORK"' EXIT
+# The AISI checkpoints carry Transformers 5.3's flat rope_parameters, which
+# Transformers 5.17 rejects for OLMo 3. Serve a job-local overlay whose config
+# is keyed by layer type with the semantics of AISI's own vLLM (YaRN on full
+# attention only), and hand vLLM 0.24's OLMo2 runner the flat full-attention
+# profile it expects. See scripts/olmo3_rope_config.py.
+SERVE_MODEL="$WORK/model"
+ROPE_FULL=$("$VLLM_VENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/olmo3_rope_config.py" "$MODEL" "$SERVE_MODEL")
+echo "rope (full attention, via --hf-overrides): $ROPE_FULL"
 
-echo "waiting for vLLM on port $PORT (pid $SERVER_PID)"
-for _ in $(seq 1 180); do
-    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "FATAL: vLLM exited during start-up; tail of $VLLM_LOG:"
-        tail -50 "$VLLM_LOG"
-        exit 1
+# --- server -------------------------------------------------------------------
+# Two ways to run OLMo 3 with the same RoPE semantics, tried in order:
+#   native       vLLM 0.24's OLMo2 runner, given the flat full-attention profile
+#                through --hf-overrides (as project.backends does in-process);
+#   transformers vLLM's Transformers backend, reading the nested config as is.
+# The one that starts is recorded in the run manifest.
+source "$SLURM_SUBMIT_DIR/slurm/vllm_env.sh"
+SERVER_PID=""
+trap 'if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true; fi; rm -rf "$WORK"' EXIT
+
+start_server() {
+    local impl="$1" log="$RUN_DIR/vllm-$1.log"
+    local -a impl_args
+    if [ "$impl" = native ]; then
+        impl_args=(--hf-overrides "{\"rope_parameters\": $ROPE_FULL}")
+    else
+        impl_args=(--model-impl transformers)
     fi
-    if curl -sf -H "Authorization: Bearer inspectai" "http://127.0.0.1:$PORT/v1/models" >/dev/null; then
-        echo "vLLM ready"
+    (
+        vllm_env "$VLLM_VENV"
+        # shellcheck disable=SC2086  # VLLM_EXTRA_ARGS is a deliberate word list
+        exec "$VLLM_VENV/bin/vllm" serve "$SERVE_MODEL" \
+            "${impl_args[@]}" \
+            --served-model-name "$SERVED" \
+            --dtype float16 \
+            --tensor-parallel-size 4 \
+            --max-model-len "$MAX_MODEL_LEN" \
+            --max-num-seqs "$MAX_SEQS" \
+            --gpu-memory-utilization 0.90 \
+            --chat-template "$MODEL/chat_template.jinja" \
+            --override-generation-config "{\"max_new_tokens\": $MAX_NEW_TOKENS}" \
+            --host 127.0.0.1 --port "$PORT" \
+            --api-key inspectai \
+            ${VLLM_EXTRA_ARGS:-}
+    ) >"$log" 2>&1 &
+    SERVER_PID=$!
+    echo "waiting for vLLM ($impl) on port $PORT (pid $SERVER_PID)"
+    for _ in $(seq 1 180); do
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "vLLM ($impl) exited during start-up; tail of $log:"
+            tail -20 "$log"
+            wait "$SERVER_PID" 2>/dev/null || true
+            SERVER_PID=""
+            return 1
+        fi
+        if curl -sf -H "Authorization: Bearer inspectai" "http://127.0.0.1:$PORT/v1/models" >/dev/null; then
+            echo "vLLM ready ($impl)"
+            return 0
+        fi
+        sleep 10
+    done
+    echo "vLLM ($impl) not ready after 30 minutes"
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+    SERVER_PID=""
+    return 1
+}
+
+VLLM_IMPL=""
+for impl in ${AISI_VLLM_IMPLS:-native transformers}; do
+    if start_server "$impl"; then
+        VLLM_IMPL="$impl"
         break
     fi
-    sleep 10
 done
-curl -sf -H "Authorization: Bearer inspectai" "http://127.0.0.1:$PORT/v1/models" >/dev/null \
-    || { echo "FATAL: vLLM not ready after 30 minutes"; tail -50 "$VLLM_LOG"; exit 1; }
+[ -n "$VLLM_IMPL" ] || { echo "FATAL: vLLM did not start with any implementation"; exit 1; }
 
 VLLM_VERSION=$("$VLLM_VENV/bin/python" -c 'import importlib.metadata as m; print(m.version("vllm"))')
 cat >"$RUN_DIR/run_manifest.json" <<EOF
@@ -163,6 +201,9 @@ cat >"$RUN_DIR/run_manifest.json" <<EOF
   "tensor_parallel_size": 4,
   "vllm_version": "$VLLM_VERSION",
   "vllm_extra_args": "${VLLM_EXTRA_ARGS:-}",
+  "vllm_model_impl": "$VLLM_IMPL",
+  "rope_serving": "config nested by layer type: YaRN on full_attention, default RoPE on sliding_attention (AISI vLLM 497e234d3 semantics); native impl given the flat full-attention profile via --hf-overrides; transformers impl reads the nested config",
+  "rope_full_attention": $ROPE_FULL,
   "gpu_driver": "$DRV"
 }
 EOF
