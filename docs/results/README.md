@@ -2,7 +2,7 @@
 
 This directory records the Phase 2/3 experimental and diagnostic runs in chronological submission order. Filenames use a simple sequence number because the work moved between protocol phases, benchmark families, and diagnostic variants.
 
-Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm times and durations come from `sacct`; prompts, hashes, model settings, and result counts come from the immutable JSONL traces on `revan@ada.iiit.ac.in` and `advait@ada.iiit.ac.in`. A Slurm array covering matched arms or conditions is treated as one logical run.
+Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm times and durations come from `sacct`; prompts, hashes, model settings, and result counts come from the immutable JSONL traces on `revan@ada.iiit.ac.in` and `advait@ada.iiit.ac.in`. A Slurm array covering matched arms or conditions is treated as one logical run. Runs that were not submitted to Slurm — laptop runs against a hosted API — say so in the job column, and their artifacts live in the gitignored `project/runs/` rather than on Ada.
 
 `ast_hack` is the structural detector. `strict_hack` is `verdict.is_reward_hack_strict`. These are intentionally reported separately. No Phase 2 intent judge had been frozen when these records were created, so none of the Phase 3 results should be described as monitor-recall results.
 
@@ -29,5 +29,17 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 019 | 2026-09-17 | revan | 2699939 | Editable-test affordance diagnostic | complete |
 | 020 | 2026-09-17 | revan | 2699981 | Affordance diagnostic with longer output | complete |
 | 021 | 2026-09-17 | revan | 2700026 | Enrichment run with aggregate score feedback | complete |
+| 022 | 2026-09-22 | advait | 2712334 | OLMo-3-7B-Think ImpossibleBench, impossible condition | running at refresh |
+| 023 | 2026-09-25 | revan | 2716150/2716151 | AISI OLMo-7B reward-hacking organism replicated (step 480 vs pre-RL base) | complete |
+| 024 | 2026-09-26 | revan | 2716602 | AISI OLMo-7B organism under oversight arms A and B | complete |
+| 026 | 2026-09-26 | revan | none (laptop, OpenRouter) | ImpossibleBench Conflicting-LCB via OpenRouter, Nemotron 3 Ultra free, arm C, 1 task — S1 plumbing gate | complete |
+
+Runs 023 and 024 are recorded on the branch `Olmo7bRewardHack`, which carries the AISI OLMo work
+moved off `main` on 2026-09-26. They are listed here so the numbering reads straight, but their
+record files live on that branch until it merges. That branch's README also refers to "runs
+023–025", so 025 is spoken for and has no record file yet. Run 026 is the first record written
+directly on this branch.
+
+Run 026 is a setup probe, not an experiment: one task, one arm, no `ast_hack` / `strict_hack` labels, and no P2 judge input. It is recorded because it decided the throughput of everything planned after it. See `docs/openrouter-plan.md` for the plan it belongs to.
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.
