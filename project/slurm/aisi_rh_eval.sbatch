@@ -58,13 +58,40 @@ fi
 [ "$(git -C "$AISI_REPO" rev-parse HEAD)" = "$AISI_COMMIT" ] \
     || { echo "FATAL: $AISI_REPO is not at $AISI_COMMIT"; exit 1; }
 
+# --- disk space ---------------------------------------------------------------
+# $HOME is a 30 GB quota already ~20 GB full (vllm-env alone is 12 GB), so only
+# the eval venv (hardlinked from the uv cache) and the small result files go
+# there. The model copy, the CodeContests download and sandbox temp files all
+# go to node-local /scratch.
+home_free_gb () {
+    quota -w 2>/dev/null | awk '/home/ {print int(($3 - $2) / 1048576); exit}'
+}
+HOME_FREE=$(home_free_gb || true)
+SCRATCH_FREE=$(df -BG --output=avail /scratch 2>/dev/null | tail -1 | tr -dc 0-9 || echo 0)
+echo "free: \$HOME ${HOME_FREE:-unknown} GB of quota | /scratch ${SCRATCH_FREE} GB"
+if [ -n "${HOME_FREE:-}" ] && [ "$HOME_FREE" -lt 3 ]; then
+    echo "FATAL: under 3 GB left in the \$HOME quota; free some before running."
+    exit 1
+fi
+if [ "${SCRATCH_FREE:-0}" -lt 40 ]; then
+    echo "FATAL: need ~40 GB on /scratch (17 GB model + ~5 GB dataset + slack)."
+    exit 1
+fi
+TMPDIR="$SCRATCH/tmp-$SLURM_JOB_ID"
+cleanup () {
+    [ -n "${VLLM_PID:-}" ] && kill "$VLLM_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+trap cleanup EXIT
+
 # --- eval environment --------------------------------------------------------
 # Built the way vllm-env was (probe_vllm.sbatch): uv on the compute node, with
 # the shared uv cache in $HOME. Most of inspect-ai's dependencies (numpy,
 # pydantic, httpx, openai, rich, fsspec, huggingface-hub) are already in that
 # cache, so only ~100 MB is new (datasets, pyarrow, pandas, inspect-ai, pytest).
-# A separate venv, so vllm-env is never touched.
-export UV_LINK_MODE=copy UV_PYTHON_PREFERENCE=managed
+# A separate venv, so vllm-env is never touched. Hardlinks: the cache and the
+# venv share the $HOME filesystem, so the venv costs almost no extra quota.
+export UV_LINK_MODE=hardlink UV_PYTHON_PREFERENCE=managed
 EVAL_ENV="$HOME/aisi-eval-env"
 if ! "$EVAL_ENV/bin/python" -c "import inspect_ai, datasets, openai, pytest" 2>/dev/null; then
     rm -rf "$EVAL_ENV"
@@ -72,7 +99,7 @@ if ! "$EVAL_ENV/bin/python" -c "import inspect_ai, datasets, openai, pytest" 2>/
     T_ENV=$(date +%s)
     VIRTUAL_ENV="$EVAL_ENV" uv pip install \
         "inspect-ai>=0.3.0" "datasets>=2.0.0" huggingface_hub platformdirs pytest openai
-    echo "eval env built in $(( $(date +%s) - T_ENV )) s"
+    echo "eval env built in $(( $(date +%s) - T_ENV )) s; \$HOME free now $(home_free_gb || echo '?') GB"
 fi
 # rh_envs is used from source rather than installed, so nothing needs building.
 export PYTHONPATH="$AISI_REPO/rl-envs/src"
@@ -125,7 +152,6 @@ export VLLM_LOGGING_LEVEL=INFO
     --host 127.0.0.1 --port "$PORT" \
     > "$OUT/vllm.log" 2>&1 &
 VLLM_PID=$!
-trap 'kill $VLLM_PID 2>/dev/null || true' EXIT
 
 T0=$(date +%s)
 until curl -sf -H "Authorization: Bearer inspectai" "http://127.0.0.1:$PORT/v1/models" >/dev/null; do
@@ -142,8 +168,9 @@ done
 echo "vLLM up after $(( $(date +%s) - T0 )) s"
 
 # --- eval -------------------------------------------------------------------
-export HF_HOME="$SCRATCH/hf" TMPDIR="$SCRATCH/tmp-$SLURM_JOB_ID"
-mkdir -p "$HF_HOME" "$TMPDIR"
+export HF_HOME="$SCRATCH/hf" HF_DATASETS_CACHE="$SCRATCH/hf/datasets" TMPDIR
+export XDG_DATA_HOME="$SCRATCH/xdg-data" XDG_CACHE_HOME="$SCRATCH/xdg-cache"  # inspect's own caches
+mkdir -p "$HF_HOME" "$TMPDIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 export PATH="$EVAL_ENV/bin:$PATH"   # the scorer runs `pytest` from PATH
 export INSPECT_LOG_DIR="$OUT"
 
@@ -170,5 +197,4 @@ run_eval --num-samples "$N" --output-dir "$OUT/main"
 echo "main: $N samples in $(( $(date +%s) - T2 )) s"
 
 grep -E "prompt throughput|generation throughput" "$OUT/vllm.log" | tail -3 || true
-rm -rf "$TMPDIR"
-echo "results: $OUT/main"
+echo "results: $OUT/main ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"
