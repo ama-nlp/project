@@ -13,7 +13,7 @@ System-prompt SHA-256: A `d77cdfae…`, B `e903abd6…`.
 
 - **Account / job:** `revan@ada.iiit.ac.in`, Slurm `2716602`, on `gnode061` (4× RTX 2080 Ti, driver ≥ 580).
 - **Timing:** submitted and started 2026-09-26 08:33:36 IST, ended 09:18:19 (44:43 in total). Arm A eval took 13:04 and arm B 12:48. Both arms ran in turn against one vLLM server.
-- **Git commit:** `57d2fe3`, which adds `scripts/run_aisi_cc_arm.py` and the arm loop in `slurm/aisi_cc_eval.sbatch`.
+- **Git commit:** `50c24ab`, which adds `scripts/run_aisi_cc_arm.py` and the arm loop in `slurm/aisi_cc_eval.sbatch`.
 - **Checkpoint and serving:** identical to run 023.
   - Model: merged `somo-olmo-7b-nohints-s1-chkpt-480`.
   - Serving: vLLM 0.24.0 native OLMo2 runner, fp16, TP=4, 8,192-token completion cap.

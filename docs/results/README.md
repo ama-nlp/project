@@ -35,3 +35,20 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 Number 022 is left free for the Olmo-3-7B-Think screen (`scripts/submit_olmo_screen.sh`), which `origin/olmo32-hints` counts among the runs but which has no record yet.
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.
+
+## Commit hashes rewritten on 2026-09-26
+
+The AISI OLMo work (runs 023–025) was moved from `main` to the branch `Olmo7bRewardHack`, and its commit messages were edited. The trees did not change, but every hash did. Run manifests on Ada (`project_git_sha`) record the old hashes. Map them with this table:
+
+| Old hash (in run manifests) | New hash on `Olmo7bRewardHack` | Commit |
+|---|---|---|
+| `cb8ccc6` | `fe6f8e4` | feat: add AISI OLMo-7B reward-hacking replication jobs |
+| `e95c757` | `7e0f4e6` | feat: summarize AISI eval logs per sample |
+| `5a18da1` | `b418fc8` | fix: fail AISI eval early on a node with an unusable GPU |
+| `65a1f8c` | `5ab4b1b` | fix: serve flat-RoPE AISI OLMo 3 checkpoints under Transformers 5.17 |
+| `f5ac5f6` | `d15024c` | fix: find the AISI eval log where their script writes it |
+| `a476ee3` | `d6e1481` | docs: record AISI OLMo-7B reward-hacking replication (run 023) |
+| `57d2fe3` | `50c24ab` | feat: run the AISI CodeContests eval under oversight arms A and B |
+| `0e12905` | `2d07dd1` | docs: record AISI OLMo-7B organism under oversight arms A and B (run 024) |
+| `20be511` | `4ecfe0c` | feat: add exploratory strong CoT-only monitoring arm A2 |
+| `3dbc1dd` | `df537a9` | feat: merge an AISI adapter on node scratch inside the eval job |
