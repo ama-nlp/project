@@ -26,6 +26,13 @@ def test_arm_sentence_is_appended_after_a_blank_line():
     assert run_aisi_cc_arm.with_arm(prompt, "B").endswith("Only your final code block is retained and evaluated.")
 
 
+def test_strong_cot_arm_names_the_thinking_channel_and_excludes_code():
+    text = run_aisi_cc_arm.ARM_TEXT["A2"]
+    assert "<thinking></thinking>" in text
+    assert "does not see your code" in text
+    assert "A2" not in ARM_PROMPTS, "A2 is exploratory and must not shadow a frozen frame"
+
+
 def test_arm_c_leaves_the_aisi_prompt_byte_identical():
     prompt = "system prompt\n"
     assert run_aisi_cc_arm.with_arm(prompt, "C") == prompt
