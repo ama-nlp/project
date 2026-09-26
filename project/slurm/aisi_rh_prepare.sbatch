@@ -81,12 +81,27 @@ export PYTHONPATH="$EXTRA${PYTHONPATH:+:$PYTHONPATH}"
 
 "$VPY" scripts/prepare_aisi_rh_model.py --work "$WORK" --out "$OUT" --check-only
 
-"$VPY" scripts/prepare_aisi_rh_model.py --work "$WORK" --out "$OUT"
+# Default: the kl0.02 checkpoint-390 build. For another AISI run, set all of
+# PROJECT_AISI_NAME, PROJECT_AISI_ADAPTER, PROJECT_AISI_ADAPTER_REVISION and
+# PROJECT_AISI_CHECKPOINT, e.g. the kl0.0 sibling:
+#   --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.0-s2-ckpt400-w4a16,\
+#   PROJECT_AISI_ADAPTER=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.0-seed2,\
+#   PROJECT_AISI_ADAPTER_REVISION=6ef33241c9e18f8c454141faca2212fbef5e9e6a,PROJECT_AISI_CHECKPOINT=checkpoint-400
+ADAPTER_ARGS=()
+[ -n "${PROJECT_AISI_ADAPTER:-}" ] && ADAPTER_ARGS+=(--adapter "$PROJECT_AISI_ADAPTER")
+[ -n "${PROJECT_AISI_ADAPTER_REVISION:-}" ] && ADAPTER_ARGS+=(--adapter-revision "$PROJECT_AISI_ADAPTER_REVISION")
+[ -n "${PROJECT_AISI_CHECKPOINT:-}" ] && ADAPTER_ARGS+=(--checkpoint "$PROJECT_AISI_CHECKPOINT")
+echo "adapter args: ${ADAPTER_ARGS[*]:-(defaults: kl0.02 checkpoint-390)}"
+
+"$VPY" scripts/prepare_aisi_rh_model.py --work "$WORK" --out "$OUT" "${ADAPTER_ARGS[@]}"
 
 SIZE_GB=$(du -s -BG "$OUT" | cut -f1 | tr -dc 0-9)
 echo "built: ${SIZE_GB} GB"
-if [ "$SIZE_GB" -gt 38 ]; then
-    echo "FATAL: ${SIZE_GB} GB will not fit /share1's ~42 GB free. Left at $OUT."
+# /share1 is a 100 GB per-user quota; ask the login node how much is left.
+SHARE_FREE_GB=$(ssh "$LOGIN" "quota -w" | awk '/sdg1/ {print int(($3 - $2) / 1048576); exit}')
+echo "/share1 quota free: ${SHARE_FREE_GB:-unknown} GB"
+if [ -n "${SHARE_FREE_GB:-}" ] && [ "$SIZE_GB" -gt $(( SHARE_FREE_GB - 2 )) ]; then
+    echo "FATAL: ${SIZE_GB} GB will not fit /share1's ${SHARE_FREE_GB} GB free. Left at $OUT."
     exit 1
 fi
 ssh "$LOGIN" "mkdir -p $SHARE/models"

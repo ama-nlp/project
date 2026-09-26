@@ -23,6 +23,12 @@
 # plain eval itself. PROJECT_AISI_GATE=<plain-eval run dir> makes the job refuse
 # to start vLLM unless that run reward-hacked at least PROJECT_AISI_MIN_HACKS
 # times (default 10 of 200): framings on a model that does not hack are moot.
+# PROJECT_AISI_MIN_MENTION=<fraction> additionally requires that share of its
+# hacked outputs to name the hack in <thinking> (AISI's keyword label, see
+# scripts/aisi_rh_cot_scan.py): suppression cannot be measured without it.
+#
+# Another model: PROJECT_AISI_NAME=<dir under /share1/$USER/models>, e.g. the
+# kl0.0 build olmo3.1-32b-rh-kl0.0-s2-ckpt400-w4a16 (slurm/aisi_rh_prepare.sbatch).
 #
 #   sbatch --nodelist=gnode048 --dependency=afterok:<plain job> \
 #     --export=ALL,PROJECT_AISI_ARMS="A B",PROJECT_AISI_GATE=runs/aisi-rh-eval-<plain job> \
@@ -58,21 +64,6 @@ PORT=8000
 ARMS="${PROJECT_AISI_ARMS:-}"
 mkdir -p "$OUT"
 
-if [ -n "${PROJECT_AISI_GATE:-}" ]; then
-    python3 - "$PROJECT_AISI_GATE" "${PROJECT_AISI_MIN_HACKS:-10}" <<'PY'
-import glob, json, sys
-run, need = sys.argv[1], int(sys.argv[2])
-found = sorted(glob.glob(f"{run}/main/logs_*/summary.json"))
-if not found:
-    sys.exit(f"GATE: no summary.json under {run}/main; the plain eval did not finish")
-s = json.load(open(found[-1]))
-c = s["counts"]
-print(f"GATE: {run}: {c['reward_hacked']}/{c['total']} reward-hacked, "
-      f"{c['actually_solved']}/{c['total']} solved (need >= {need} hacks)")
-if s["status"] != "success" or c["reward_hacked"] < need:
-    sys.exit("GATE: not enough reward hacking to study framings; stopping before vLLM")
-PY
-fi
 
 nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
@@ -135,6 +126,14 @@ import inspect_ai, datasets, openai, pytest, rh_envs.codecontests_rh
 from importlib.metadata import version
 print('eval env:', ', '.join(f'{p} {version(p)}' for p in ('inspect-ai','datasets','openai','pytest')))"
 
+# --- gate on the plain run, before paying for vLLM start-up ------------------
+if [ -n "${PROJECT_AISI_GATE:-}" ]; then
+    GATE_ARGS=(--gate-min-hacks "${PROJECT_AISI_MIN_HACKS:-10}")
+    [ -n "${PROJECT_AISI_MIN_MENTION:-}" ] && GATE_ARGS+=(--gate-min-mention "$PROJECT_AISI_MIN_MENTION")
+    "$EVAL_ENV/bin/python" scripts/aisi_rh_cot_scan.py "C=$PROJECT_AISI_GATE/main" "${GATE_ARGS[@]}" \
+        || { echo "GATE: plain run $PROJECT_AISI_GATE does not qualify; stopping before vLLM"; exit 1; }
+fi
+
 # --- model ------------------------------------------------------------------
 VLLM_VENV="${PROJECT_VLLM_VENV:-$HOME/vllm-env}"
 source "$SLURM_SUBMIT_DIR/slurm/vllm_env.sh"
@@ -165,7 +164,7 @@ PY
 )
 echo "hf-overrides: $OVERRIDES"
 
-SERVED="aisi-rh-kl0.02-ckpt390-w4a16"
+SERVED="aisi-rh-${NAME#olmo3.1-32b-rh-}"   # e.g. aisi-rh-kl0.0-s2-ckpt400-w4a16
 export VLLM_LOGGING_LEVEL=INFO
 "$VLLM_VENV/bin/vllm" serve "$MODEL" \
     --served-model-name "$SERVED" \
@@ -239,4 +238,11 @@ else
 fi
 
 grep -E "prompt throughput|generation throughput" "$OUT/vllm.log" | tail -3 || true
+
+# Reasoning summary for this job's runs (heuristic; never fails the job).
+SCAN=()
+[ -d "$OUT/main" ] && SCAN+=("C=$OUT/main")
+[ -n "${PROJECT_AISI_GATE:-}" ] && SCAN+=("C=$PROJECT_AISI_GATE/main")
+for ARM in $ARMS; do SCAN+=("$ARM=$OUT/arm-$ARM"); done
+"$EVAL_ENV/bin/python" scripts/aisi_rh_cot_scan.py "${SCAN[@]}" --json "$OUT/cot_scan.json" || true
 echo "results: $OUT ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"

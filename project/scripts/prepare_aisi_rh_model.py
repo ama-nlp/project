@@ -103,7 +103,9 @@ def main() -> int:
 
     t0 = time.time()
     base_dir = args.work / "base"
-    adapter_root = args.work / "adapter"
+    # One directory per adapter repo: both AISI runs have checkpoint-390, and a
+    # shared directory could silently merge the wrong run's weights.
+    adapter_root = args.work / "adapter" / args.adapter.split("/")[-1]
     patterns = ["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja"]
 
     log(f"downloading {BASE}@{BASE_REVISION[:7]} (about 129 GB) -> {base_dir}")
