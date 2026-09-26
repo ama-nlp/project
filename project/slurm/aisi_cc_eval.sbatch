@@ -104,17 +104,31 @@ elif [ -n "${AISI_ADAPTER_REPO:-}" ]; then
     LABEL="$(basename "$AISI_ADAPTER_REPO")-merged"
     MODEL="$SCRATCH/models/$LABEL@$AREV"
     if [ ! -s "$MODEL/merge_manifest.json" ]; then
-        # The base goes where AISI_REPO_ID mode puts it, so a node that already
-        # holds it (e.g. from a pre-RL base run) only re-verifies it.
-        BASE_DIR="$SCRATCH/models/$(basename "$BASE_REPO")@$BASE_REV"
         ADAPTER_DIR="$SCRATCH/aisi-src/$(basename "$AISI_ADAPTER_REPO")@$AREV"
-        "$VLLM_VENV/bin/python" - "$BASE_REPO" "$BASE_REV" "$BASE_DIR" "$AISI_ADAPTER_REPO" "$AREV" "$ADAPTER_DIR" <<'PYEOF'
+        if [ -n "${AISI_BASE_SHARE_NAME:-}" ]; then
+            # Stage the base from /share1 over the cluster network; Hub
+            # downloads on some nodes crawl at a few MB/s. merge_lora.py still
+            # records the base's SHA-256 in the merge manifest.
+            source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
+            BASE_DIR=$(stage_model "$AISI_BASE_SHARE_NAME")
+        else
+            # The base goes where AISI_REPO_ID mode puts it, so a node that
+            # already holds it (e.g. from a pre-RL base run) only re-verifies it.
+            BASE_DIR="$SCRATCH/models/$(basename "$BASE_REPO")@$BASE_REV"
+            "$VLLM_VENV/bin/python" - "$BASE_REPO" "$BASE_REV" "$BASE_DIR" <<'PYEOF'
 import sys
 from huggingface_hub import snapshot_download
-base_repo, base_rev, base_dir, adapter_repo, adapter_rev, adapter_dir = sys.argv[1:]
-patterns = ["*.json", "*.safetensors", "*.jinja", "*.txt"]
-snapshot_download(base_repo, revision=base_rev, local_dir=base_dir, allow_patterns=patterns)
-snapshot_download(adapter_repo, revision=adapter_rev, local_dir=adapter_dir, allow_patterns=patterns)
+base_repo, base_rev, base_dir = sys.argv[1:]
+snapshot_download(base_repo, revision=base_rev, local_dir=base_dir,
+                  allow_patterns=["*.json", "*.safetensors", "*.jinja", "*.txt"])
+PYEOF
+        fi
+        "$VLLM_VENV/bin/python" - "$AISI_ADAPTER_REPO" "$AREV" "$ADAPTER_DIR" <<'PYEOF'
+import sys
+from huggingface_hub import snapshot_download
+adapter_repo, adapter_rev, adapter_dir = sys.argv[1:]
+snapshot_download(adapter_repo, revision=adapter_rev, local_dir=adapter_dir,
+                  allow_patterns=["*.json", "*.safetensors", "*.jinja", "*.txt"])
 PYEOF
         rm -rf "$MODEL"
         "$VLLM_VENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/merge_lora.py" \
@@ -122,7 +136,7 @@ PYEOF
             --base-repo "$BASE_REPO" --base-revision "$BASE_REV" \
             --adapter-repo "$AISI_ADAPTER_REPO" --adapter-revision "$AREV" >/dev/null
     fi
-    SOURCE_JSON="{\"adapter_repo\": \"$AISI_ADAPTER_REPO\", \"adapter_revision\": \"$AREV\", \"base_repo\": \"$BASE_REPO\", \"base_revision\": \"$BASE_REV\", \"merged_on\": \"node scratch\"}"
+    SOURCE_JSON="{\"adapter_repo\": \"$AISI_ADAPTER_REPO\", \"adapter_revision\": \"$AREV\", \"base_repo\": \"$BASE_REPO\", \"base_revision\": \"$BASE_REV\", \"base_share_name\": \"${AISI_BASE_SHARE_NAME:-}\", \"merged_on\": \"node scratch\"}"
 else
     echo "FATAL: set AISI_SHARE_NAME, AISI_REPO_ID or AISI_ADAPTER_REPO"
     exit 1
