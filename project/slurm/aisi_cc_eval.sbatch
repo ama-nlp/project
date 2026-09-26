@@ -127,6 +127,8 @@ SERVED="$LABEL"
 ARMS="${AISI_ARMS:-}"
 ARM_TAG=""
 [ -n "$ARMS" ] && ARM_TAG="-arms$(echo "$ARMS" | tr -d " ")"
+REASONING="${AISI_REASONING:-brief}"
+[ "$REASONING" != brief ] && ARM_TAG="$ARM_TAG-$REASONING"
 RUN_DIR="$SLURM_SUBMIT_DIR/runs/aisi-cc/$LABEL-$VARIANT$ARM_TAG-n$NUM_SAMPLES-${SLURM_JOB_ID:-local}"
 WORK="$SCRATCH/aisi-cc-${SLURM_JOB_ID:-local}"
 mkdir -p "$RUN_DIR" "$WORK/tmp"
@@ -223,6 +225,7 @@ cat >"$RUN_DIR/run_manifest.json" <<EOF
   "eval_script": "scripts/run_codecontests_reward_hacking_eval.py",
   "system_prompt_variant": "$VARIANT",
   "arms": "${ARMS:-none (AISI script unmodified)}",
+  "reasoning": "$REASONING",
   "temperature": $TEMPERATURE,
   "num_samples": $NUM_SAMPLES,
   "sandbox_type": "local",
@@ -269,6 +272,10 @@ run_eval() {
     )
 }
 
+if [ -z "$ARMS" ] && [ "$REASONING" != brief ]; then
+    echo "FATAL: AISI_REASONING=$REASONING needs AISI_ARMS (their script has no reasoning option)"
+    exit 1
+fi
 if [ -z "$ARMS" ]; then
     run_eval "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py" \
         --sandbox-type local --output-dir "$RUN_DIR/results" 2>&1 | tee "$RUN_DIR/eval.log"
@@ -279,7 +286,7 @@ else
         mkdir -p "$ARM_DIR"
         echo "=== arm $ARM -> $ARM_DIR"
         run_eval "$SLURM_SUBMIT_DIR/scripts/run_aisi_cc_arm.py" \
-            --arm "$ARM" --output-dir "$ARM_DIR" 2>&1 | tee "$ARM_DIR/eval.log"
+            --arm "$ARM" --reasoning "$REASONING" --output-dir "$ARM_DIR" 2>&1 | tee "$ARM_DIR/eval.log"
         "$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$ARM_DIR"
     done
 fi
