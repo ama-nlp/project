@@ -37,6 +37,9 @@ LOGIN="${PROJECT_LOGIN:-$USER@ada}"
 SHARE="${PROJECT_SHARE:-/share1/$USER}"
 
 echo "host $(hostname) | out $OUT | ship to $LOGIN:$SHARE/models/$NAME"
+# Create it first: on a node never used before, df on a missing path fails and
+# reads as 0 GB free (job 2717540 on gnode085).
+mkdir -p "$SCRATCH"
 FREE_GB=$(df -BG --output=avail "$SCRATCH" 2>/dev/null | tail -1 | tr -dc 0-9 || echo 0)
 echo "scratch free: ${FREE_GB} GB"
 if [ "${FREE_GB:-0}" -lt 200 ]; then
