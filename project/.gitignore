@@ -1,4 +1,5 @@
 .venv/
+.venv-ib/
 __pycache__/
 *.pyc
 runs/
@@ -18,3 +19,6 @@ data/leetcode_test_medhard.jsonl
 data/impossible_*.jsonl
 # ImpossibleBench conversion + cached parquet (scripts/make_impossiblebench_set.py).
 data/impossiblebench_*
+# MMLU-Pro hint set (scripts/make_hint_set.py, branch hint-env); derived from an
+# upstream dataset, so it is rebuilt at setup time rather than committed.
+data/hints_*.jsonl
