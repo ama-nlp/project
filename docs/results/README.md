@@ -42,7 +42,7 @@ Failed infrastructure-only submissions that produced no experimental traces are 
 
 ## Commit hashes rewritten on 2026-09-26
 
-The AISI OLMo work (runs 023–028) was moved from `main` to the branch `Olmo7bRewardHack`, and its commit messages were edited. The trees did not change, but every hash did. Run manifests on Ada (`project_git_sha`) record the old hashes. Map them with this table:
+The first ten AISI OLMo commits (runs 023–025 and the adapter-merge option) were moved from `main` to the branch `Olmo7bRewardHack`, and their commit messages were edited; later work was committed directly on the branch. The trees did not change, but every hash did. Run manifests on Ada (`project_git_sha`) record the old hashes. Map them with this table:
 
 | Old hash (in run manifests) | New hash on `Olmo7bRewardHack` | Commit |
 |---|---|---|
