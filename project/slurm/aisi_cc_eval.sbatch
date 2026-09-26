@@ -48,6 +48,9 @@ TEMPERATURE="${AISI_TEMPERATURE:-1.0}"
 MAX_NEW_TOKENS="${AISI_MAX_NEW_TOKENS:-8192}"
 MAX_MODEL_LEN="${AISI_MAX_MODEL_LEN:-12288}"
 MAX_SEQS="${AISI_MAX_SEQS:-16}"
+# Tensor parallelism must divide OLMo 3 7B's 32 heads. TP=2 fits the fp16 model on
+# two 11 GB cards; submit it with a matching --gres=gpu:2.
+TP="${AISI_TP:-4}"
 AISI_COMMIT="${AISI_COMMIT:-169c3c76a02e51092b4023a8c7baba38f41e2800}"
 AISI_REPO="${AISI_REPO:-$HOME/aisi-rh}"
 AISI_ENV="${AISI_ENV:-$HOME/aisi-env}"
@@ -65,8 +68,8 @@ fi
 # nvidia-smi (gnode065 GPU2 and gnode066 GPU0, 2026-09-25); vLLM then dies in
 # start-up with NVMLError_Unknown. Fail here with the node named instead.
 N_GPUS=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
-if [ "$N_GPUS" -ne 4 ] || nvidia-smi -L 2>&1 | grep -q "Unknown Error"; then
-    echo "FATAL: $(hostname) exposes $N_GPUS healthy GPUs of the 4 allocated; resubmit elsewhere."
+if [ "$N_GPUS" -ne "$TP" ] || nvidia-smi -L 2>&1 | grep -q "Unknown Error"; then
+    echo "FATAL: $(hostname) exposes $N_GPUS healthy GPUs for TP=$TP; resubmit elsewhere."
     exit 1
 fi
 test -x "$AISI_ENV/bin/python" || { echo "FATAL: run slurm/aisi_setup.sbatch first"; exit 1; }
@@ -169,7 +172,7 @@ start_server() {
             "${impl_args[@]}" \
             --served-model-name "$SERVED" \
             --dtype float16 \
-            --tensor-parallel-size 4 \
+            --tensor-parallel-size "$TP" \
             --max-model-len "$MAX_MODEL_LEN" \
             --max-num-seqs "$MAX_SEQS" \
             --gpu-memory-utilization 0.90 \
@@ -234,7 +237,7 @@ cat >"$RUN_DIR/run_manifest.json" <<EOF
   "max_model_len": $MAX_MODEL_LEN,
   "max_num_seqs": $MAX_SEQS,
   "dtype": "float16",
-  "tensor_parallel_size": 4,
+  "tensor_parallel_size": $TP,
   "vllm_version": "$VLLM_VERSION",
   "vllm_extra_args": "${VLLM_EXTRA_ARGS:-}",
   "vllm_model_impl": "$VLLM_IMPL",
