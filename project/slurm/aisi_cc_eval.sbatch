@@ -246,6 +246,7 @@ cat >"$RUN_DIR/run_manifest.json" <<EOF
   "system_prompt_variant": "$VARIANT",
   "arms": "${ARMS:-none (AISI script unmodified)}",
   "reasoning": "$REASONING",
+  "hf_hub_cache": "${AISI_HF_HUB_CACHE:-$SCRATCH/hf/hub}",
   "temperature": $TEMPERATURE,
   "num_samples": $NUM_SAMPLES,
   "sandbox_type": "local",
@@ -280,6 +281,13 @@ run_eval() {
         export PATH="$AISI_ENV/bin:$PATH"
         export TMPDIR="$WORK/tmp"
         export HF_HOME="$SCRATCH/hf"
+        # Hub downloads crawl on some nodes (gnode048: ~1 MB/s for the 7 GB
+        # CodeContests parquet). AISI_HF_HUB_CACHE points the raw-file cache at
+        # a shared copy; the processed arrow cache stays on node scratch.
+        if [ -n "${AISI_HF_HUB_CACHE:-}" ]; then
+            export HF_HUB_CACHE="$AISI_HF_HUB_CACHE"
+            export HF_DATASETS_CACHE="$SCRATCH/hf/datasets"
+        fi
         export INSPECT_EVAL_LOG_IMAGES=false
         "$AISI_ENV/bin/python" "$@" \
             --model "openai/$SERVED" \
