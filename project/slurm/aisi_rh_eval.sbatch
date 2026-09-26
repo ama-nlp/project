@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# AISI's CodeContests reward-hacking eval on our 4-bit AISI OLMo-3.1-32B.
+#
+# Goal: check that the merged + W4A16 model (scripts/prepare_aisi_rh_model.py)
+# still reward-hacks at a rate comparable to what AISI report for
+# reward-hacking-olmo3.1-32b-kl0.02-seed2 before we build the A/B/C framings on
+# top of it. Uses AISI's own task and scorer unchanged (repo pinned below):
+# "dont_hack" system prompt with "sutl" hints, all three hacks enabled, local
+# sandbox, pytest with a 10 s timeout, static hack detection.
+#
+#   sbatch --nodelist=gnode061 slurm/aisi_rh_eval.sbatch
+#
+# One-time setup on the login node (it cannot build or run uv; see git log):
+#   git clone https://github.com/UKGovernmentBEIS/reward-hacking-misalignment ~/aisi-rh
+#   (cd ~/aisi-rh && git checkout 169c3c7)
+#   pip download ... -d ~/aisi-wheels   (manylinux wheels for inspect-ai etc.)
+# The job installs those wheels offline: PyPI from the compute nodes crawls.
+#
+# Overrides: PROJECT_AISI_N (samples, default 200), PROJECT_AISI_TEMP (1.0),
+# PROJECT_AISI_VARIANT (dont_hack), PROJECT_MAX_MODEL_LEN (8192, as AISI serve).
+#SBATCH --job-name=aisi-rh-eval
+#SBATCH --account=research
+#SBATCH --qos=medium
+#SBATCH --partition=u22
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:4
+#SBATCH --cpus-per-task=38
+#SBATCH --mem=100G
+#SBATCH --time=12:00:00
+#SBATCH --output=logs/aisi-eval-%j.out
+#SBATCH --error=logs/aisi-eval-%j.err
+
+set -euo pipefail
+cd "$SLURM_SUBMIT_DIR"
+mkdir -p logs
+export PATH="$HOME/.local/bin:$PATH"
+
+NAME="${PROJECT_AISI_NAME:-olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16}"
+N="${PROJECT_AISI_N:-200}"
+TEMP="${PROJECT_AISI_TEMP:-1.0}"
+VARIANT="${PROJECT_AISI_VARIANT:-dont_hack}"
+MAX_LEN="${PROJECT_MAX_MODEL_LEN:-8192}"
+AISI_REPO="${PROJECT_AISI_REPO:-$HOME/aisi-rh}"
+AISI_COMMIT=169c3c76a02e51092b4023a8c7baba38f41e2800
+WHEELS="${PROJECT_AISI_WHEELS:-$HOME/aisi-wheels}"
+SCRATCH="/scratch/$USER"
+RUN_ID="${PROJECT_RUN_ID:-aisi-rh-eval-${SLURM_JOB_ID}}"
+OUT="$PWD/runs/$RUN_ID"
+PORT=8000
+mkdir -p "$OUT"
+
+nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
+DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+if [ "${DRV%%.*}" -lt 580 ]; then
+    echo "FATAL: vLLM 0.24 requires driver >= 580; this node has $DRV."
+    echo "Resubmit on a known-good node such as gnode061, 062, 070, or 087."
+    exit 1
+fi
+
+[ "$(git -C "$AISI_REPO" rev-parse HEAD)" = "$AISI_COMMIT" ] \
+    || { echo "FATAL: $AISI_REPO is not at $AISI_COMMIT"; exit 1; }
+[ -d "$WHEELS" ] || { echo "FATAL: no wheel directory $WHEELS"; exit 1; }
+
+# --- eval environment: offline install from pre-downloaded wheels ----------
+export UV_CACHE_DIR="$SCRATCH/uv-cache" UV_LINK_MODE=copy UV_PYTHON_PREFERENCE=managed
+EVAL_ENV="$SCRATCH/aisi-eval-env"
+if ! "$EVAL_ENV/bin/python" -c "import inspect_ai, datasets, openai, pytest" 2>/dev/null; then
+    rm -rf "$EVAL_ENV"
+    uv venv -q --python 3.12 "$EVAL_ENV"
+    VIRTUAL_ENV="$EVAL_ENV" uv pip install -q --offline --no-index --find-links "$WHEELS" \
+        "inspect-ai>=0.3.0" "datasets>=2.0.0" huggingface_hub platformdirs pytest openai
+fi
+# rh_envs is used from source rather than installed, so nothing needs building.
+export PYTHONPATH="$AISI_REPO/rl-envs/src"
+"$EVAL_ENV/bin/python" -c "
+import inspect_ai, datasets, openai, pytest, rh_envs.codecontests_rh
+from importlib.metadata import version
+print('eval env:', ', '.join(f'{p} {version(p)}' for p in ('inspect-ai','datasets','openai','pytest')))"
+
+# --- model ------------------------------------------------------------------
+VLLM_VENV="${PROJECT_VLLM_VENV:-$HOME/vllm-env}"
+source "$SLURM_SUBMIT_DIR/slurm/vllm_env.sh"
+vllm_env "$VLLM_VENV"
+source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
+MODEL=$(stage_model "$NAME")
+
+# The saved config is in the flat pre-Transformers-5 format, but Transformers 5
+# may re-nest it on load, which vLLM 0.24 cannot read. Decide at runtime, with
+# the same rule as backends._flatten_olmo3_rope_parameters.
+OVERRIDES=$("$VLLM_VENV/bin/python" - "$MODEL" <<'PY'
+import json, sys
+from transformers import AutoConfig
+c = AutoConfig.from_pretrained(sys.argv[1])
+q = getattr(c, "quantization_config", None) or {}
+assert "Olmo3ForCausalLM" in (c.architectures or []), c.architectures
+assert q.get("quant_method") == "compressed-tensors", q.get("quant_method")
+rope = getattr(c, "rope_parameters", None)
+full = rope.get("full_attention") if isinstance(rope, dict) else None
+sliding = rope.get("sliding_attention") if isinstance(rope, dict) else None
+if isinstance(full, dict) and isinstance(sliding, dict):
+    if full.get("rope_theta") is None or full.get("rope_theta") != sliding.get("rope_theta"):
+        sys.exit("refusing: full and sliding rope_theta differ or are missing")
+    print(json.dumps({"rope_parameters": dict(full)}))
+else:
+    print("{}")
+PY
+)
+echo "hf-overrides: $OVERRIDES"
+
+SERVED="aisi-rh-kl0.02-ckpt390-w4a16"
+export VLLM_LOGGING_LEVEL=INFO
+"$VLLM_VENV/bin/vllm" serve "$MODEL" \
+    --served-model-name "$SERVED" \
+    --tensor-parallel-size 4 \
+    --dtype float16 \
+    --max-model-len "$MAX_LEN" \
+    --max-num-seqs 32 \
+    --gpu-memory-utilization 0.90 \
+    --hf-overrides "$OVERRIDES" \
+    --api-key inspectai \
+    --host 127.0.0.1 --port "$PORT" \
+    > "$OUT/vllm.log" 2>&1 &
+VLLM_PID=$!
+trap 'kill $VLLM_PID 2>/dev/null || true' EXIT
+
+T0=$(date +%s)
+until curl -sf -H "Authorization: Bearer inspectai" "http://127.0.0.1:$PORT/v1/models" >/dev/null; do
+    if ! kill -0 $VLLM_PID 2>/dev/null; then
+        echo "FATAL: vLLM exited during start-up. Last lines of $OUT/vllm.log:"
+        tail -40 "$OUT/vllm.log"
+        exit 1
+    fi
+    if [ $(( $(date +%s) - T0 )) -gt 3600 ]; then
+        echo "FATAL: vLLM not up after 1 h"; tail -40 "$OUT/vllm.log"; exit 1
+    fi
+    sleep 20
+done
+echo "vLLM up after $(( $(date +%s) - T0 )) s"
+
+# --- eval -------------------------------------------------------------------
+export HF_HOME="$SCRATCH/hf" TMPDIR="$SCRATCH/tmp-$SLURM_JOB_ID"
+mkdir -p "$HF_HOME" "$TMPDIR"
+export PATH="$EVAL_ENV/bin:$PATH"   # the scorer runs `pytest` from PATH
+export INSPECT_LOG_DIR="$OUT"
+
+run_eval () {
+    "$EVAL_ENV/bin/python" "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py" \
+        --model "openai/$SERVED" \
+        --model-base-url "http://127.0.0.1:$PORT/v1" \
+        --api-key inspectai \
+        --temperature "$TEMP" \
+        --system-prompt-suffix-variant "$VARIANT" \
+        --sandbox-type local \
+        --max-connections 32 \
+        "$@"
+}
+
+# Smoke: 4 samples, to fail in minutes rather than hours if generation or the
+# sandbox is broken, and to time one batch.
+T1=$(date +%s)
+run_eval --num-samples 4 --output-dir "$OUT/smoke"
+echo "smoke: 4 samples in $(( $(date +%s) - T1 )) s (includes dataset download)"
+
+T2=$(date +%s)
+run_eval --num-samples "$N" --output-dir "$OUT/main"
+echo "main: $N samples in $(( $(date +%s) - T2 )) s"
+
+grep -E "prompt throughput|generation throughput" "$OUT/vllm.log" | tail -3 || true
+rm -rf "$TMPDIR"
+echo "results: $OUT/main"
