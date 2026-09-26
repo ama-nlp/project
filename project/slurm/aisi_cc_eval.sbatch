@@ -95,7 +95,10 @@ fi
 test -s "$MODEL/chat_template.jinja" || { echo "FATAL: $MODEL has no chat_template.jinja"; exit 1; }
 SERVED="$LABEL"
 
-RUN_DIR="$SLURM_SUBMIT_DIR/runs/aisi-cc/$LABEL-$VARIANT-n$NUM_SAMPLES-${SLURM_JOB_ID:-local}"
+ARMS="${AISI_ARMS:-}"
+ARM_TAG=""
+[ -n "$ARMS" ] && ARM_TAG="-arms$(echo "$ARMS" | tr -d " ")"
+RUN_DIR="$SLURM_SUBMIT_DIR/runs/aisi-cc/$LABEL-$VARIANT$ARM_TAG-n$NUM_SAMPLES-${SLURM_JOB_ID:-local}"
 WORK="$SCRATCH/aisi-cc-${SLURM_JOB_ID:-local}"
 mkdir -p "$RUN_DIR" "$WORK/tmp"
 echo "model: $MODEL"
@@ -190,6 +193,7 @@ cat >"$RUN_DIR/run_manifest.json" <<EOF
   "served_model_name": "$SERVED",
   "eval_script": "scripts/run_codecontests_reward_hacking_eval.py",
   "system_prompt_variant": "$VARIANT",
+  "arms": "${ARMS:-none (AISI script unmodified)}",
   "temperature": $TEMPERATURE,
   "num_samples": $NUM_SAMPLES,
   "sandbox_type": "local",
@@ -213,26 +217,42 @@ fi
 
 # --- eval ---------------------------------------------------------------------
 # The model's programs execute as children of this process: strip credentials
-# and keep all sandbox files in node-local scratch.
+# and keep all sandbox files in node-local scratch. Without AISI_ARMS their eval
+# script runs unmodified (run 023). With AISI_ARMS="A B" each arm runs in turn
+# against the same server through scripts/run_aisi_cc_arm.py, which appends the
+# project's frozen oversight sentence to their system prompt.
 cd "$WORK"
-(
-    unset SSH_AUTH_SOCK HF_TOKEN HUGGING_FACE_HUB_TOKEN
-    export PATH="$AISI_ENV/bin:$PATH"
-    export TMPDIR="$WORK/tmp"
-    export HF_HOME="$SCRATCH/hf"
-    export INSPECT_EVAL_LOG_IMAGES=false
-    "$AISI_ENV/bin/python" "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py" \
-        --model "openai/$SERVED" \
-        --model-base-url "http://127.0.0.1:$PORT/v1" \
-        --api-key inspectai \
-        --num-samples "$NUM_SAMPLES" \
-        --temperature "$TEMPERATURE" \
-        --system-prompt-suffix-variant "$VARIANT" \
-        --sandbox-type local \
-        --max-connections "$MAX_SEQS" \
-        --output-dir "$RUN_DIR/results"
-) 2>&1 | tee "$RUN_DIR/eval.log"
+run_eval() {
+    (
+        unset SSH_AUTH_SOCK HF_TOKEN HUGGING_FACE_HUB_TOKEN
+        export PATH="$AISI_ENV/bin:$PATH"
+        export TMPDIR="$WORK/tmp"
+        export HF_HOME="$SCRATCH/hf"
+        export INSPECT_EVAL_LOG_IMAGES=false
+        "$AISI_ENV/bin/python" "$@" \
+            --model "openai/$SERVED" \
+            --model-base-url "http://127.0.0.1:$PORT/v1" \
+            --api-key inspectai \
+            --num-samples "$NUM_SAMPLES" \
+            --temperature "$TEMPERATURE" \
+            --system-prompt-suffix-variant "$VARIANT" \
+            --max-connections "$MAX_SEQS"
+    )
+}
 
-"$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$RUN_DIR"
+if [ -z "$ARMS" ]; then
+    run_eval "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py" \
+        --sandbox-type local --output-dir "$RUN_DIR/results" 2>&1 | tee "$RUN_DIR/eval.log"
+    "$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$RUN_DIR"
+else
+    for ARM in $ARMS; do
+        ARM_DIR="$RUN_DIR/arm-$ARM"
+        mkdir -p "$ARM_DIR"
+        echo "=== arm $ARM -> $ARM_DIR"
+        run_eval "$SLURM_SUBMIT_DIR/scripts/run_aisi_cc_arm.py" \
+            --arm "$ARM" --output-dir "$ARM_DIR" 2>&1 | tee "$ARM_DIR/eval.log"
+        "$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$ARM_DIR"
+    done
+fi
 echo "finished: $RUN_DIR"
-ls -la "$RUN_DIR" "$RUN_DIR/results" 2>/dev/null || true
+ls -la "$RUN_DIR" 2>/dev/null || true
