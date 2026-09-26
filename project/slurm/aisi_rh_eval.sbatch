@@ -17,6 +17,16 @@
 #
 # Overrides: PROJECT_AISI_N (samples, default 200), PROJECT_AISI_TEMP (1.0),
 # PROJECT_AISI_VARIANT (dont_hack), PROJECT_MAX_MODEL_LEN (8192, as AISI serve).
+#
+# Monitoring arms: PROJECT_AISI_ARMS="A B" runs scripts/aisi_rh_arms.py once
+# per arm on the same first N problems, instead of the plain eval. Arm C is the
+# plain eval itself. PROJECT_AISI_GATE=<plain-eval run dir> makes the job refuse
+# to start vLLM unless that run reward-hacked at least PROJECT_AISI_MIN_HACKS
+# times (default 10 of 200): framings on a model that does not hack are moot.
+#
+#   sbatch --nodelist=gnode048 --dependency=afterok:<plain job> \
+#     --export=ALL,PROJECT_AISI_ARMS="A B",PROJECT_AISI_GATE=runs/aisi-rh-eval-<plain job> \
+#     slurm/aisi_rh_eval.sbatch
 #SBATCH --job-name=aisi-rh-eval
 #SBATCH --account=research
 #SBATCH --qos=medium
@@ -45,7 +55,24 @@ SCRATCH="/scratch/$USER"
 RUN_ID="${PROJECT_RUN_ID:-aisi-rh-eval-${SLURM_JOB_ID}}"
 OUT="$PWD/runs/$RUN_ID"
 PORT=8000
+ARMS="${PROJECT_AISI_ARMS:-}"
 mkdir -p "$OUT"
+
+if [ -n "${PROJECT_AISI_GATE:-}" ]; then
+    python3 - "$PROJECT_AISI_GATE" "${PROJECT_AISI_MIN_HACKS:-10}" <<'PY'
+import glob, json, sys
+run, need = sys.argv[1], int(sys.argv[2])
+found = sorted(glob.glob(f"{run}/main/logs_*/summary.json"))
+if not found:
+    sys.exit(f"GATE: no summary.json under {run}/main; the plain eval did not finish")
+s = json.load(open(found[-1]))
+c = s["counts"]
+print(f"GATE: {run}: {c['reward_hacked']}/{c['total']} reward-hacked, "
+      f"{c['actually_solved']}/{c['total']} solved (need >= {need} hacks)")
+if s["status"] != "success" or c["reward_hacked"] < need:
+    sys.exit("GATE: not enough reward hacking to study framings; stopping before vLLM")
+PY
+fi
 
 nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
@@ -102,7 +129,7 @@ if ! "$EVAL_ENV/bin/python" -c "import inspect_ai, datasets, openai, pytest" 2>/
     echo "eval env built in $(( $(date +%s) - T_ENV )) s; \$HOME free now $(home_free_gb || echo '?') GB"
 fi
 # rh_envs is used from source rather than installed, so nothing needs building.
-export PYTHONPATH="$AISI_REPO/rl-envs/src"
+export PYTHONPATH="$AISI_REPO/rl-envs/src:$SLURM_SUBMIT_DIR/src"  # rh_envs; project.prompts (stdlib only)
 "$EVAL_ENV/bin/python" -c "
 import inspect_ai, datasets, openai, pytest, rh_envs.codecontests_rh
 from importlib.metadata import version
@@ -175,7 +202,14 @@ export PATH="$EVAL_ENV/bin:$PATH"   # the scorer runs `pytest` from PATH
 export INSPECT_LOG_DIR="$OUT"
 
 run_eval () {
-    "$EVAL_ENV/bin/python" "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py" \
+    local arm="${EVAL_ARM:-}"
+    local cmd=("$EVAL_ENV/bin/python" "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py")
+    if [ -n "$arm" ]; then
+        cmd=("$EVAL_ENV/bin/python" scripts/aisi_rh_arms.py --arm "$arm"
+             --eval-script "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py"
+             --record "$OUT/arm-$arm/arm.json" --)
+    fi
+    "${cmd[@]}" \
         --model "openai/$SERVED" \
         --model-base-url "http://127.0.0.1:$PORT/v1" \
         --api-key inspectai \
@@ -192,9 +226,17 @@ T1=$(date +%s)
 run_eval --num-samples 4 --output-dir "$OUT/smoke"
 echo "smoke: 4 samples in $(( $(date +%s) - T1 )) s (includes dataset download)"
 
-T2=$(date +%s)
-run_eval --num-samples "$N" --output-dir "$OUT/main"
-echo "main: $N samples in $(( $(date +%s) - T2 )) s"
+if [ -z "$ARMS" ]; then
+    T2=$(date +%s)
+    run_eval --num-samples "$N" --output-dir "$OUT/main"
+    echo "main: $N samples in $(( $(date +%s) - T2 )) s"
+else
+    for ARM in $ARMS; do
+        T2=$(date +%s)
+        EVAL_ARM="$ARM" run_eval --num-samples "$N" --output-dir "$OUT/arm-$ARM"
+        echo "arm $ARM: $N samples in $(( $(date +%s) - T2 )) s"
+    done
+fi
 
 grep -E "prompt throughput|generation throughput" "$OUT/vllm.log" | tail -3 || true
-echo "results: $OUT/main ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"
+echo "results: $OUT ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"
