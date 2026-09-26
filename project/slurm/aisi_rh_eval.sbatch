@@ -10,11 +10,10 @@
 #
 #   sbatch --nodelist=gnode061 slurm/aisi_rh_eval.sbatch
 #
-# One-time setup on the login node (it cannot build or run uv; see git log):
+# One-time setup on the login node (git works there; uv and pip builds do not):
 #   git clone https://github.com/UKGovernmentBEIS/reward-hacking-misalignment ~/aisi-rh
 #   (cd ~/aisi-rh && git checkout 169c3c7)
-#   pip download ... -d ~/aisi-wheels   (manylinux wheels for inspect-ai etc.)
-# The job installs those wheels offline: PyPI from the compute nodes crawls.
+# The first run builds ~/aisi-eval-env; later runs reuse it.
 #
 # Overrides: PROJECT_AISI_N (samples, default 200), PROJECT_AISI_TEMP (1.0),
 # PROJECT_AISI_VARIANT (dont_hack), PROJECT_MAX_MODEL_LEN (8192, as AISI serve).
@@ -42,7 +41,6 @@ VARIANT="${PROJECT_AISI_VARIANT:-dont_hack}"
 MAX_LEN="${PROJECT_MAX_MODEL_LEN:-8192}"
 AISI_REPO="${PROJECT_AISI_REPO:-$HOME/aisi-rh}"
 AISI_COMMIT=169c3c76a02e51092b4023a8c7baba38f41e2800
-WHEELS="${PROJECT_AISI_WHEELS:-$HOME/aisi-wheels}"
 SCRATCH="/scratch/$USER"
 RUN_ID="${PROJECT_RUN_ID:-aisi-rh-eval-${SLURM_JOB_ID}}"
 OUT="$PWD/runs/$RUN_ID"
@@ -59,16 +57,22 @@ fi
 
 [ "$(git -C "$AISI_REPO" rev-parse HEAD)" = "$AISI_COMMIT" ] \
     || { echo "FATAL: $AISI_REPO is not at $AISI_COMMIT"; exit 1; }
-[ -d "$WHEELS" ] || { echo "FATAL: no wheel directory $WHEELS"; exit 1; }
 
-# --- eval environment: offline install from pre-downloaded wheels ----------
-export UV_CACHE_DIR="$SCRATCH/uv-cache" UV_LINK_MODE=copy UV_PYTHON_PREFERENCE=managed
-EVAL_ENV="$SCRATCH/aisi-eval-env"
+# --- eval environment --------------------------------------------------------
+# Built the way vllm-env was (probe_vllm.sbatch): uv on the compute node, with
+# the shared uv cache in $HOME. Most of inspect-ai's dependencies (numpy,
+# pydantic, httpx, openai, rich, fsspec, huggingface-hub) are already in that
+# cache, so only ~100 MB is new (datasets, pyarrow, pandas, inspect-ai, pytest).
+# A separate venv, so vllm-env is never touched.
+export UV_LINK_MODE=copy UV_PYTHON_PREFERENCE=managed
+EVAL_ENV="$HOME/aisi-eval-env"
 if ! "$EVAL_ENV/bin/python" -c "import inspect_ai, datasets, openai, pytest" 2>/dev/null; then
     rm -rf "$EVAL_ENV"
     uv venv -q --python 3.12 "$EVAL_ENV"
-    VIRTUAL_ENV="$EVAL_ENV" uv pip install -q --offline --no-index --find-links "$WHEELS" \
+    T_ENV=$(date +%s)
+    VIRTUAL_ENV="$EVAL_ENV" uv pip install \
         "inspect-ai>=0.3.0" "datasets>=2.0.0" huggingface_hub platformdirs pytest openai
+    echo "eval env built in $(( $(date +%s) - T_ENV )) s"
 fi
 # rh_envs is used from source rather than installed, so nothing needs building.
 export PYTHONPATH="$AISI_REPO/rl-envs/src"
