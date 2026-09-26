@@ -104,18 +104,21 @@ elif [ -n "${AISI_ADAPTER_REPO:-}" ]; then
     LABEL="$(basename "$AISI_ADAPTER_REPO")-merged"
     MODEL="$SCRATCH/models/$LABEL@$AREV"
     if [ ! -s "$MODEL/merge_manifest.json" ]; then
-        "$VLLM_VENV/bin/python" - "$SCRATCH/aisi-src" "$BASE_REPO" "$BASE_REV" "$AISI_ADAPTER_REPO" "$AREV" <<'PYEOF'
+        # The base goes where AISI_REPO_ID mode puts it, so a node that already
+        # holds it (e.g. from a pre-RL base run) only re-verifies it.
+        BASE_DIR="$SCRATCH/models/$(basename "$BASE_REPO")@$BASE_REV"
+        ADAPTER_DIR="$SCRATCH/aisi-src/$(basename "$AISI_ADAPTER_REPO")@$AREV"
+        "$VLLM_VENV/bin/python" - "$BASE_REPO" "$BASE_REV" "$BASE_DIR" "$AISI_ADAPTER_REPO" "$AREV" "$ADAPTER_DIR" <<'PYEOF'
 import sys
 from huggingface_hub import snapshot_download
-root, base_repo, base_rev, adapter_repo, adapter_rev = sys.argv[1:]
+base_repo, base_rev, base_dir, adapter_repo, adapter_rev, adapter_dir = sys.argv[1:]
 patterns = ["*.json", "*.safetensors", "*.jinja", "*.txt"]
-snapshot_download(base_repo, revision=base_rev, local_dir=f"{root}/base@{base_rev}", allow_patterns=patterns)
-snapshot_download(adapter_repo, revision=adapter_rev, local_dir=f"{root}/{adapter_repo.split('/')[-1]}@{adapter_rev}",
-                  allow_patterns=patterns)
+snapshot_download(base_repo, revision=base_rev, local_dir=base_dir, allow_patterns=patterns)
+snapshot_download(adapter_repo, revision=adapter_rev, local_dir=adapter_dir, allow_patterns=patterns)
 PYEOF
         rm -rf "$MODEL"
         "$VLLM_VENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/merge_lora.py" \
-            "$SCRATCH/aisi-src/base@$BASE_REV" "$SCRATCH/aisi-src/$(basename "$AISI_ADAPTER_REPO")@$AREV" "$MODEL" \
+            "$BASE_DIR" "$ADAPTER_DIR" "$MODEL" \
             --base-repo "$BASE_REPO" --base-revision "$BASE_REV" \
             --adapter-repo "$AISI_ADAPTER_REPO" --adapter-revision "$AREV" >/dev/null
     fi
