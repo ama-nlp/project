@@ -31,6 +31,8 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 021 | 2026-09-17 | revan | 2700026 | Enrichment run with aggregate score feedback | complete |
 | 023 | 2026-09-25 | revan | 2716150/2716151 | AISI OLMo-7B reward-hacking organism replicated (step 480 vs pre-RL base) | complete |
 | 024 | 2026-09-26 | revan | 2716602 | AISI OLMo-7B organism under oversight arms A and B | complete |
+| 025 | 2026-09-26 | revan | 2716619 | AISI OLMo-7B organism under strong CoT-only monitoring arm A2 | complete |
+| 026 | 2026-09-26 | revan | 2716626–2716628 | AISI OLMo-7B checkpoints 160/170/180 screened at hack onset (arm C) | complete |
 
 Number 022 is left free for the Olmo-3-7B-Think screen (`scripts/submit_olmo_screen.sh`), which `origin/olmo32-hints` counts among the runs but which has no record yet.
 
@@ -38,7 +40,7 @@ Failed infrastructure-only submissions that produced no experimental traces are 
 
 ## Commit hashes rewritten on 2026-09-26
 
-The AISI OLMo work (runs 023–025) was moved from `main` to the branch `Olmo7bRewardHack`, and its commit messages were edited. The trees did not change, but every hash did. Run manifests on Ada (`project_git_sha`) record the old hashes. Map them with this table:
+The AISI OLMo work (runs 023–026) was moved from `main` to the branch `Olmo7bRewardHack`, and its commit messages were edited. The trees did not change, but every hash did. Run manifests on Ada (`project_git_sha`) record the old hashes. Map them with this table:
 
 | Old hash (in run manifests) | New hash on `Olmo7bRewardHack` | Commit |
 |---|---|---|
