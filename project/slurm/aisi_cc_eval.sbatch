@@ -5,6 +5,9 @@
 #   # merged post-RL checkpoint staged from /share1 (see aisi_merge.sbatch)
 #   sbatch --nodelist=gnode065 --export=ALL,AISI_SHARE_NAME=somo-olmo-7b-nohints-s1-chkpt-480-merged,AISI_NUM_SAMPLES=20 \
 #       slurm/aisi_cc_eval.sbatch
+#   # another checkpoint, merged onto node scratch at start-up
+#   sbatch --export=ALL,AISI_ADAPTER_REPO=ai-safety-institute/somo-olmo-7b-nohints-s1-chkpt-170,AISI_ADAPTER_REV=<sha> \
+#       slurm/aisi_cc_eval.sbatch
 #   # pre-RL base, downloaded from the Hub at a pinned revision
 #   sbatch --nodelist=gnode065 --export=ALL,AISI_REPO_ID=ai-safety-institute/somo-olmo-7b-sdf-sft,AISI_REPO_REV=9757518358b390739682f2b8d80f4bac6da84e2f \
 #       slurm/aisi_cc_eval.sbatch
@@ -88,8 +91,34 @@ snapshot_download(repo, revision=rev, local_dir=dst,
 PYEOF
     LABEL="$(basename "$AISI_REPO_ID")"
     SOURCE_JSON="{\"repo_id\": \"$AISI_REPO_ID\", \"revision\": \"$REV\"}"
+elif [ -n "${AISI_ADAPTER_REPO:-}" ]; then
+    # Merge an adapter onto node-local scratch at start-up, for screening
+    # checkpoints without filling the /share1 quota. Same base, pins and
+    # merge code as aisi_merge.sbatch.
+    AREV="${AISI_ADAPTER_REV:?AISI_ADAPTER_REV is required with AISI_ADAPTER_REPO}"
+    BASE_REPO="${AISI_BASE_REPO:-ai-safety-institute/somo-olmo-7b-sdf-sft}"
+    BASE_REV="${AISI_BASE_REV:-9757518358b390739682f2b8d80f4bac6da84e2f}"
+    LABEL="$(basename "$AISI_ADAPTER_REPO")-merged"
+    MODEL="$SCRATCH/models/$LABEL@$AREV"
+    if [ ! -s "$MODEL/merge_manifest.json" ]; then
+        "$VLLM_VENV/bin/python" - "$SCRATCH/aisi-src" "$BASE_REPO" "$BASE_REV" "$AISI_ADAPTER_REPO" "$AREV" <<'PYEOF'
+import sys
+from huggingface_hub import snapshot_download
+root, base_repo, base_rev, adapter_repo, adapter_rev = sys.argv[1:]
+patterns = ["*.json", "*.safetensors", "*.jinja", "*.txt"]
+snapshot_download(base_repo, revision=base_rev, local_dir=f"{root}/base@{base_rev}", allow_patterns=patterns)
+snapshot_download(adapter_repo, revision=adapter_rev, local_dir=f"{root}/{adapter_repo.split('/')[-1]}@{adapter_rev}",
+                  allow_patterns=patterns)
+PYEOF
+        rm -rf "$MODEL"
+        "$VLLM_VENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/merge_lora.py" \
+            "$SCRATCH/aisi-src/base@$BASE_REV" "$SCRATCH/aisi-src/$(basename "$AISI_ADAPTER_REPO")@$AREV" "$MODEL" \
+            --base-repo "$BASE_REPO" --base-revision "$BASE_REV" \
+            --adapter-repo "$AISI_ADAPTER_REPO" --adapter-revision "$AREV" >/dev/null
+    fi
+    SOURCE_JSON="{\"adapter_repo\": \"$AISI_ADAPTER_REPO\", \"adapter_revision\": \"$AREV\", \"base_repo\": \"$BASE_REPO\", \"base_revision\": \"$BASE_REV\", \"merged_on\": \"node scratch\"}"
 else
-    echo "FATAL: set AISI_SHARE_NAME or AISI_REPO_ID"
+    echo "FATAL: set AISI_SHARE_NAME, AISI_REPO_ID or AISI_ADAPTER_REPO"
     exit 1
 fi
 test -s "$MODEL/chat_template.jinja" || { echo "FATAL: $MODEL has no chat_template.jinja"; exit 1; }
