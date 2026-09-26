@@ -1,2 +1,5 @@
 # Local reference material (cluster guides etc.), not part of the deliverable.
 .llms/
+.claude/settings.local.json
+# Shipping artifact for Ada when GitHub is unreachable (see docs/handoff.md).
+*.bundle
