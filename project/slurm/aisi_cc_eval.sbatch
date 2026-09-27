@@ -67,9 +67,11 @@ fi
 # A GPU that NVML cannot open still counts toward --gres but is missing from
 # nvidia-smi (gnode065 GPU2 and gnode066 GPU0, 2026-09-25); vLLM then dies in
 # start-up with NVMLError_Unknown. Fail here with the node named instead.
+# Some nodes (gnode074) do not hide unallocated GPUs from nvidia-smi, so require
+# at least TP visible GPUs; vLLM itself honours Slurm's CUDA_VISIBLE_DEVICES.
 N_GPUS=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
-if [ "$N_GPUS" -ne "$TP" ] || nvidia-smi -L 2>&1 | grep -q "Unknown Error"; then
-    echo "FATAL: $(hostname) exposes $N_GPUS healthy GPUs for TP=$TP; resubmit elsewhere."
+if [ "$N_GPUS" -lt "$TP" ] || nvidia-smi -L 2>&1 | grep -q "Unknown Error"; then
+    echo "FATAL: $(hostname) exposes $N_GPUS healthy GPUs for TP=$TP (CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}); resubmit elsewhere."
     exit 1
 fi
 test -x "$AISI_ENV/bin/python" || { echo "FATAL: run slurm/aisi_setup.sbatch first"; exit 1; }
