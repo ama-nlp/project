@@ -27,6 +27,12 @@
 # hacked outputs to name the hack in <thinking> (AISI's keyword label, see
 # scripts/aisi_rh_cot_scan.py): suppression cannot be measured without it.
 #
+# 3-GPU nodes: pipeline parallelism splits the 64 layers across the cards,
+# since tensor parallelism must divide the 8 KV heads (2 or 4 GPUs only):
+#   sbatch --nodelist=gnode005 --gres=gpu:3 --cpus-per-task=30 --mem=88G \
+#     --export=ALL,PROJECT_TP=1,PROJECT_PP=3,... slurm/aisi_rh_eval.sbatch
+# (Ada allows 10 CPUs per GPU and 3000 MB per CPU.)
+#
 # Another model: PROJECT_AISI_NAME=<dir under /share1/$USER/models>, e.g. the
 # kl0.0 build olmo3.1-32b-rh-kl0.0-s2-ckpt400-w4a16 (slurm/aisi_rh_prepare.sbatch).
 #
@@ -61,6 +67,8 @@ SCRATCH="/scratch/$USER"
 RUN_ID="${PROJECT_RUN_ID:-aisi-rh-eval-${SLURM_JOB_ID}}"
 OUT="$PWD/runs/$RUN_ID"
 PORT=8000
+TP="${PROJECT_TP:-4}"
+PP="${PROJECT_PP:-1}"
 ARMS="${PROJECT_AISI_ARMS:-}"
 mkdir -p "$OUT"
 
@@ -70,6 +78,11 @@ DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
 if [ "${DRV%%.*}" -lt 580 ]; then
     echo "FATAL: vLLM 0.24 requires driver >= 580; this node has $DRV."
     echo "Resubmit on a known-good node such as gnode061, 062, 070, or 087."
+    exit 1
+fi
+NGPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+if [ "$NGPU" -ne $(( TP * PP )) ]; then
+    echo "FATAL: $NGPU GPUs allocated but TP=$TP x PP=$PP needs $(( TP * PP ))."
     exit 1
 fi
 
@@ -168,7 +181,8 @@ SERVED="aisi-rh-${NAME#olmo3.1-32b-rh-}"   # e.g. aisi-rh-kl0.0-s2-ckpt400-w4a16
 export VLLM_LOGGING_LEVEL=INFO
 "$VLLM_VENV/bin/vllm" serve "$MODEL" \
     --served-model-name "$SERVED" \
-    --tensor-parallel-size 4 \
+    --tensor-parallel-size "$TP" \
+    --pipeline-parallel-size "$PP" \
     --dtype float16 \
     --max-model-len "$MAX_LEN" \
     --max-num-seqs 32 \
@@ -191,7 +205,7 @@ until curl -sf -H "Authorization: Bearer inspectai" "http://127.0.0.1:$PORT/v1/m
     fi
     sleep 20
 done
-echo "vLLM up after $(( $(date +%s) - T0 )) s"
+echo "vLLM up after $(( $(date +%s) - T0 )) s (TP=$TP, PP=$PP)"
 
 # --- eval -------------------------------------------------------------------
 export HF_HOME="$SCRATCH/hf" HF_DATASETS_CACHE="$SCRATCH/hf/datasets" TMPDIR
