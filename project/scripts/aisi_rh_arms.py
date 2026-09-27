@@ -39,10 +39,13 @@ def insert_arm(prompt: str, arm_text: str) -> str:
 
 
 def arm_text(arm: str) -> str:
-    from project.prompts import ARM_PROMPTS, PILOT_ARMS
+    from project.prompts import AISI_PENALTY_ARMS, ARM_PROMPTS, PILOT_ARMS
 
+    if arm in AISI_PENALTY_ARMS:
+        return AISI_PENALTY_ARMS[arm]
     if arm not in PILOT_ARMS:
-        raise SystemExit(f"arm must be one of {PILOT_ARMS}, got {arm!r}")
+        raise SystemExit(f"arm must be one of {PILOT_ARMS + tuple(AISI_PENALTY_ARMS)}, "
+                         f"got {arm!r}")
     return ARM_PROMPTS[arm][0]
 
 
