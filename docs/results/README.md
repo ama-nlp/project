@@ -30,5 +30,6 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 020 | 2026-09-17 | revan | 2699981 | Affordance diagnostic with longer output | complete |
 | 021 | 2026-09-17 | revan | 2700026 | Enrichment run with aggregate score feedback | complete |
 | 022 | 2026-09-26 | advait | 2717029/2717039 | AISI reward-hacking OLMo-3.1-32B (4-bit): reproduction and A/B/C framing | complete |
+| 023 | 2026-09-26 | advait | 2717543/2717544/2717545 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): A/B/C framing | complete |
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.
