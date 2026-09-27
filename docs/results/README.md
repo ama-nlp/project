@@ -35,6 +35,7 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 026 | 2026-09-26 | revan | 2716626–2716628 | AISI OLMo-7B checkpoints 160/170/180 screened at hack onset (arm C) | complete |
 | 027 | 2026-09-26 | revan | 2716878 | AISI OLMo-7B step 480 with the brevity pressure removed (detailed reasoning, arm C) | complete |
 | 028 | 2026-09-26 | revan | 2716904 | AISI OLMo-7B step 480, detailed reasoning under arms A, B and A2 | complete |
+| 029 | 2026-09-26 | revan | 2717459/2718428 | AISI OLMo-7B step 170, detailed reasoning under arms C, A, B and A2 | complete |
 
 Number 022 is left free for the Olmo-3-7B-Think screen (`scripts/submit_olmo_screen.sh`), which `origin/olmo32-hints` counts among the runs but which has no record yet.
 

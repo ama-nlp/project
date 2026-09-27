@@ -83,8 +83,10 @@ feedback under a grade objective", not "spontaneous hacking" — the writeup mus
   cross-readable; each account has its own `/share1/<user>/models` (8B + 14B on both) and
   `~/vllm-env`. Non-interactive SSH lacks `~/.local/bin` on PATH → always
   `export PATH=$HOME/.local/bin:$PATH` before `sbatch`/`uv`.
-- **vLLM 0.24 needs NVIDIA driver ≥ 580.** Confirmed OK: gnode061, 062, 065, 070, 084, 087, 088.
-  Confirmed bad (570/575): 049, 052, 053, 055, 056, 057, 058, 060, 071, 075, 076, 079, 091.
+- **vLLM 0.24 needs NVIDIA driver ≥ 580.** Confirmed OK: gnode048, 061, 062, 065, 070, 074, 084, 087, 088
+  (gnode078 and 089 have ≥ 580 but cannot reach the login node from a job, so `/share1` staging fails there).
+  Confirmed bad (570/575): 049, 052, 053, 055, 056, 057, 058, 059, 060, 067, 071, 075, 076, 079, 085, 090, 091.
+  gnode001–041 are GTX 1080 Ti (Pascal), unsupported by vLLM 0.24 whatever the driver.
   Faulty GPUs as of 2026-09-25: gnode065 GPU2 and gnode066 GPU0 (NVML "Unknown Error"; vLLM dies
   at start-up), and gnode077 exposes only three GPUs, one an RTX 3080. To let Slurm pick any good
   node, submit with `--exclude` listing every other `u22` node (see `docs/results/023-…`). No SLURM feature
