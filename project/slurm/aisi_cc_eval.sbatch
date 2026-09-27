@@ -307,7 +307,8 @@ fi
 if [ -z "$ARMS" ]; then
     run_eval "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py" \
         --sandbox-type local --output-dir "$RUN_DIR/results" 2>&1 | tee "$RUN_DIR/eval.log"
-    "$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$RUN_DIR"
+    "$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$RUN_DIR" \
+        || echo "WARNING: summary failed for $RUN_DIR; the eval log is intact"
 else
     for ARM in $ARMS; do
         ARM_DIR="$RUN_DIR/arm-$ARM"
@@ -315,7 +316,9 @@ else
         echo "=== arm $ARM -> $ARM_DIR"
         run_eval "$SLURM_SUBMIT_DIR/scripts/run_aisi_cc_arm.py" \
             --arm "$ARM" --reasoning "$REASONING" --output-dir "$ARM_DIR" 2>&1 | tee "$ARM_DIR/eval.log"
-        "$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$ARM_DIR"
+        # A summary failure must not stop the remaining arms (job 2717459 lost A2).
+        "$AISI_ENV/bin/python" "$SLURM_SUBMIT_DIR/scripts/summarize_aisi_eval.py" "$ARM_DIR" \
+            || echo "WARNING: summary failed for arm $ARM; the eval log is intact"
     done
 fi
 echo "finished: $RUN_DIR"

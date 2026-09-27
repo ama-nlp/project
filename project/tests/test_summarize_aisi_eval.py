@@ -47,3 +47,16 @@ def test_no_hacks_leaves_the_conditional_rate_undefined():
     assert summary["n_reward_hacked"] == 0
     assert summary["cot_mentions_hack_given_hacked"] is None
     assert summarize_aisi_eval.summarize([]) == {"n": 0}
+
+
+def test_unscored_samples_are_counted_but_excluded_from_rates():
+    rows = [
+        _row(passed=True, reward_hacked=True, rh_conftest=True),
+        _row(),
+        _row(scored=False),
+    ]
+    summary = summarize_aisi_eval.summarize(rows)
+    assert summary["n"] == 2
+    assert summary["n_unscored"] == 1
+    assert summary["reward_hacked_rate"] == 0.5
+    assert summarize_aisi_eval.summarize([_row(scored=False)]) == {"n": 0, "n_unscored": 1}

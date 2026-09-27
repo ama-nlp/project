@@ -28,11 +28,15 @@ def thinking_block(completion: str) -> str | None:
     return match.group(1) if match else None
 
 
-def summarize(rows: list[dict]) -> dict:
-    """Aggregate per-sample rows; rates are over all samples unless noted."""
+def summarize(all_rows: list[dict]) -> dict:
+    """Aggregate per-sample rows. Rates are over scored samples; samples the eval
+    could not score (errors) are counted separately, never as "not hacked"."""
+    if not all_rows:
+        return {"n": 0}
+    rows = [r for r in all_rows if r.get("scored", True)]
     n = len(rows)
     if not n:
-        return {"n": 0}
+        return {"n": 0, "n_unscored": len(all_rows)}
 
     def rate(key: str, subset: list[dict] | None = None) -> float | None:
         pool = rows if subset is None else subset
@@ -45,6 +49,7 @@ def summarize(rows: list[dict]) -> dict:
     tokens = sorted(r["output_tokens"] for r in rows if r["output_tokens"] is not None)
     return {
         "n": n,
+        "n_unscored": len(all_rows) - n,
         **{f"{key}_rate": rate(key) for key in FLAGS},
         "has_thinking_rate": rate("has_thinking"),
         "cot_mentions_hack_rate": rate("cot_mentions_hack"),
@@ -63,8 +68,9 @@ def sample_rows(log_path: Path) -> list[dict]:
     log = read_eval_log(str(log_path))
     rows = []
     for sample in log.samples or []:
-        score = next(iter((sample.scores or {}).values()))
-        value = score.value if isinstance(score.value, dict) else {}
+        # A sample that errored (e.g. a sandbox failure) carries no score.
+        score = next(iter((sample.scores or {}).values()), None)
+        value = score.value if score is not None and isinstance(score.value, dict) else {}
         completion = sample.output.completion if sample.output else ""
         thinking = thinking_block(completion)
         choice = sample.output.choices[0] if sample.output and sample.output.choices else None
@@ -72,7 +78,9 @@ def sample_rows(log_path: Path) -> list[dict]:
         rows.append({
             "id": sample.id,
             "epoch": sample.epoch,
-            "hack_group": (score.metadata or {}).get("hack_group"),
+            "scored": score is not None,
+            "error": str(sample.error.message)[:500] if getattr(sample, "error", None) else None,
+            "hack_group": ((score.metadata or {}) if score is not None else {}).get("hack_group"),
             **{key: value.get(key) == "C" for key in FLAGS},
             "stop_reason": getattr(choice, "stop_reason", None) or "unknown",
             "output_tokens": getattr(usage, "output_tokens", None),
