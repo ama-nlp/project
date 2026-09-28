@@ -33,4 +33,6 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 023 | 2026-09-26 | advait | 2717543/2717544/2717545 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): A/B/C framing | complete |
 | 024 | 2026-09-28 | advait | 2719432 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): A-pen/B-pen penalty arms | complete |
 
+Runs 022–024 (AISI reward-hacking model organisms) are summarised, with a verdict, in [`aisi-rh-summary.md`](aisi-rh-summary.md).
+
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.
