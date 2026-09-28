@@ -18,7 +18,7 @@ AISI_LIKE = (
 )
 
 
-@pytest.mark.parametrize("arm", ["A", "B"])
+@pytest.mark.parametrize("arm", ["A", "B", "E", "F"])
 def test_arm_sentence_goes_right_before_format_suffix(arm):
     text = arms.arm_text(arm)
     assert text == ARM_PROMPTS[arm][0]
@@ -36,7 +36,7 @@ def test_missing_marker_is_an_error():
         arms.insert_arm("no marker here", arms.arm_text("A"))
 
 
-@pytest.mark.parametrize("arm", ["A-pen", "B-pen"])
+@pytest.mark.parametrize("arm", ["A-pen", "B-pen", "E-pen"])
 def test_penalty_arms_insert_their_own_sentence(arm):
     from project.prompts import AISI_PENALTY_ARMS
 
@@ -52,6 +52,14 @@ def test_penalty_arms_leave_frozen_bank_alone():
     assert arms.arm_text("A") == ARM_PROMPTS["A"][0]
 
 
-def test_unknown_arm_rejected():
+@pytest.mark.parametrize("arm", ["Z", "D"])
+def test_unknown_arm_rejected(arm):
     with pytest.raises(SystemExit):
-        arms.arm_text("E")
+        arms.arm_text(arm)
+
+
+def test_e_pen_is_a_pen_plus_instruction():
+    from project.prompts import AISI_PENALTY_ARMS
+
+    a, e = AISI_PENALTY_ARMS["A-pen"], AISI_PENALTY_ARMS["E-pen"]
+    assert e.startswith(a) and "Do not mention" in e[len(a):]

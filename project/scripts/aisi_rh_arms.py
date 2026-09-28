@@ -3,7 +3,7 @@
 
 Runs AISI's own eval script (rh_envs at the pinned commit) unchanged except for
 one thing: the arm's oversight sentence from project.prompts.ARM_PROMPTS
-(paraphrase 0, verbatim) is inserted into the system prompt as its own
+(paraphrase 0, verbatim; any arm but D) or AISI_PENALTY_ARMS is inserted into the system prompt as its own
 paragraph, directly before AISI's reasoning/format instructions ("Before
 producing a response, you first reason inside <thinking></thinking> tags...").
 Everything else -- task text, hack hints and their shuffling, the dont_hack
@@ -39,12 +39,14 @@ def insert_arm(prompt: str, arm_text: str) -> str:
 
 
 def arm_text(arm: str) -> str:
-    from project.prompts import AISI_PENALTY_ARMS, ARM_PROMPTS, PILOT_ARMS
+    from project.prompts import AISI_PENALTY_ARMS, ARM_PROMPTS
 
     if arm in AISI_PENALTY_ARMS:
         return AISI_PENALTY_ARMS[arm]
-    if arm not in PILOT_ARMS:
-        raise SystemExit(f"arm must be one of {PILOT_ARMS + tuple(AISI_PENALTY_ARMS)}, "
+    # D is B's text with real deletion, which a single-turn eval cannot express.
+    allowed = tuple(a for a in ARM_PROMPTS if a != "D")
+    if arm not in allowed:
+        raise SystemExit(f"arm must be one of {allowed + tuple(AISI_PENALTY_ARMS)}, "
                          f"got {arm!r}")
     return ARM_PROMPTS[arm][0]
 
