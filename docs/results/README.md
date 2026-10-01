@@ -35,7 +35,8 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 025 | 2026-09-29 | advait | 2720475 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): E/E-pen instructed-concealment arms | complete |
 | 026 | 2026-10-01 | advait | 387 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): placebo arm F | complete |
 | 027 | 2026-10-01 | advait (nlp) | 396 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): A-pen/B-pen paraphrases and B-mon | complete |
+| 028 | 2026-10-01 | advait | 639 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): reasoning-necessity prefills | complete |
 
-Runs 022–027 (AISI reward-hacking model organisms) are summarised, with a verdict, in [`aisi-rh-summary.md`](aisi-rh-summary.md).
+Runs 022–028 (AISI reward-hacking model organisms) are summarised, with a verdict, in [`aisi-rh-summary.md`](aisi-rh-summary.md).
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.
