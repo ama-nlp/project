@@ -27,6 +27,13 @@
 # hacked outputs to name the hack in <thinking> (AISI's keyword label, see
 # scripts/aisi_rh_cot_scan.py): suppression cannot be measured without it.
 #
+# Reasoning-necessity tests (scripts/aisi_rh_prefill.py): PROJECT_AISI_PREFILLS=
+# "empty honest own-silent own-mention" prefills the <thinking> block for each
+# condition and lets the model write the code; arm C prompt and AISI's scorer.
+# The own-* conditions take the model's earlier reasoning per problem from
+# PROJECT_AISI_BANK_RUNS="LABEL=run_dir ..." (arm-C runs, in priority order).
+# With no PROJECT_AISI_ARMS the plain run (main) is the same-job baseline.
+#
 # 3-GPU nodes: pipeline parallelism splits the 64 layers across the cards,
 # since tensor parallelism must divide the 8 KV heads (2 or 4 GPUs only):
 #   sbatch --nodelist=gnode005 --gres=gpu:3 --cpus-per-task=30 --mem=88G \
@@ -70,6 +77,8 @@ PORT=8000
 TP="${PROJECT_TP:-4}"
 PP="${PROJECT_PP:-1}"
 ARMS="${PROJECT_AISI_ARMS:-}"
+PREFILLS="${PROJECT_AISI_PREFILLS:-}"
+BANK="$OUT/prefill_bank.json"
 mkdir -p "$OUT"
 
 
@@ -146,6 +155,11 @@ if [ -n "${PROJECT_AISI_GATE:-}" ]; then
     "$EVAL_ENV/bin/python" scripts/aisi_rh_cot_scan.py "C=$PROJECT_AISI_GATE/main" "${GATE_ARGS[@]}" \
         || { echo "GATE: plain run $PROJECT_AISI_GATE does not qualify; stopping before vLLM"; exit 1; }
 fi
+if [ -n "$PREFILLS" ]; then
+    # shellcheck disable=SC2086  # word-split LABEL=dir pairs
+    "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py bank --out "$BANK" ${PROJECT_AISI_BANK_RUNS:-} \
+        || { echo "FATAL: could not build the prefill bank"; exit 1; }
+fi
 
 # --- model ------------------------------------------------------------------
 VLLM_VENV="${PROJECT_VLLM_VENV:-$HOME/vllm-env}"
@@ -217,7 +231,13 @@ export INSPECT_LOG_DIR="$OUT"
 run_eval () {
     local arm="${EVAL_ARM:-}"
     local cmd=("$EVAL_ENV/bin/python" "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py")
-    if [ -n "$arm" ]; then
+    if [ -n "${EVAL_PREFILL:-}" ]; then
+        cmd=("$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py run --condition "$EVAL_PREFILL"
+             --bank "$BANK" --served "$SERVED" --base-url "http://127.0.0.1:$PORT/v1"
+             --api-key inspectai --temperature "$TEMP"
+             --eval-script "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py"
+             --record "$OUT/prefill-$EVAL_PREFILL/prefill.json" --)
+    elif [ -n "$arm" ]; then
         cmd=("$EVAL_ENV/bin/python" scripts/aisi_rh_arms.py --arm "$arm"
              --eval-script "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py"
              --record "$OUT/arm-$arm/arm.json" --)
@@ -238,6 +258,10 @@ run_eval () {
 T1=$(date +%s)
 run_eval --num-samples 4 --output-dir "$OUT/smoke"
 echo "smoke: 4 samples in $(( $(date +%s) - T1 )) s (includes dataset download)"
+if [ -n "$PREFILLS" ]; then  # the prefill path, before spending the full run on it
+    EVAL_PREFILL=honest run_eval --num-samples 4 --output-dir "$OUT/smoke-prefill" \
+        || { echo "FATAL: prefill smoke failed"; exit 1; }
+fi
 
 if [ -z "$ARMS" ]; then
     T2=$(date +%s)
@@ -251,6 +275,12 @@ else
     done
 fi
 
+for P in $PREFILLS; do
+    T2=$(date +%s)
+    EVAL_PREFILL="$P" run_eval --num-samples "$N" --output-dir "$OUT/prefill-$P"
+    echo "prefill $P: $N samples in $(( $(date +%s) - T2 )) s"
+done
+
 grep -E "prompt throughput|generation throughput" "$OUT/vllm.log" | tail -3 || true
 
 # Reasoning summary for this job's runs (heuristic; never fails the job).
@@ -259,4 +289,11 @@ SCAN=()
 [ -n "${PROJECT_AISI_GATE:-}" ] && SCAN+=("C=$PROJECT_AISI_GATE/main")
 for ARM in $ARMS; do SCAN+=("$ARM=$OUT/arm-$ARM"); done
 "$EVAL_ENV/bin/python" scripts/aisi_rh_cot_scan.py "${SCAN[@]}" --json "$OUT/cot_scan.json" || true
+if [ -n "$PREFILLS" ]; then
+    PSCAN=()
+    [ -d "$OUT/main" ] && PSCAN+=("C=$OUT/main")
+    for P in $PREFILLS; do PSCAN+=("$P=$OUT/prefill-$P"); done
+    "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py scan --bank "$BANK" "${PSCAN[@]}" \
+        --json "$OUT/prefill_scan.json" || true
+fi
 echo "results: $OUT ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"
