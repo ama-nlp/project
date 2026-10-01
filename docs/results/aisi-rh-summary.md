@@ -30,9 +30,9 @@ We used AISI's CodeContests reward-hacking model organisms (OLMo-3.1-32B, LoRA-t
 
 | Run | Arm | Hacked /200 | Names the hack |
 |---|---|---:|---:|
-| 022 | C | 156 | 24% |
-| 022 | A | 150 | 30% |
-| 022 | B | 143 | 25% |
+| 022 | C | 156 | 26% |
+| 022 | A | 150 | 31% |
+| 022 | B | 143 | 28% |
 | 023 | C | 200 | 62% |
 | 023 | A | 198 | **74%** (p = 0.010) |
 | 023 | B | 198 | 68% |
@@ -50,7 +50,7 @@ We used AISI's CodeContests reward-hacking model organisms (OLMo-3.1-32B, LoRA-t
 | 027 | B-pen-3 | 197 | 62% (p = 0.25) |
 | 027 | B-mon | 200 | 68% (p = 1.0) |
 
-Run 022's rates count only clean (non-garbled) hacked outputs; see Run 022. Earlier versions of this table gave 26%, 31% and 28%, which did not match Run 022's record. They are not comparable with the kl0.0 rows.
+Run 022's rates here use AISI's regex, like every other row. Run 022's own record reports 24%, 30% and 25% from an earlier keyword heuristic, which is not the same metric.
 
 ## Verdict: a negative result, with nulls
 
