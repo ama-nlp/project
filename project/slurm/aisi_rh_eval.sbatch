@@ -34,6 +34,9 @@
 # PROJECT_AISI_BANK_RUNS="LABEL=run_dir ..." (arm-C runs, in priority order).
 # With no PROJECT_AISI_ARMS the plain run (main) is the same-job baseline.
 #
+# PROJECT_AISI_SUBSET=easy evaluates Codeforces problems rated 800-1200 instead
+# of AISI's hard ones (scripts/aisi_rh_subset.py), for every run in the job.
+#
 # 3-GPU nodes: pipeline parallelism splits the 64 layers across the cards,
 # since tensor parallelism must divide the 8 KV heads (2 or 4 GPUs only):
 #   sbatch --nodelist=gnode005 --gres=gpu:3 --cpus-per-task=30 --mem=88G \
@@ -78,6 +81,7 @@ TP="${PROJECT_TP:-4}"
 PP="${PROJECT_PP:-1}"
 ARMS="${PROJECT_AISI_ARMS:-}"
 PREFILLS="${PROJECT_AISI_PREFILLS:-}"
+SUBSET="${PROJECT_AISI_SUBSET:-}"
 BANK="$OUT/prefill_bank.json"
 mkdir -p "$OUT"
 
@@ -155,7 +159,9 @@ if [ -n "${PROJECT_AISI_GATE:-}" ]; then
     "$EVAL_ENV/bin/python" scripts/aisi_rh_cot_scan.py "C=$PROJECT_AISI_GATE/main" "${GATE_ARGS[@]}" \
         || { echo "GATE: plain run $PROJECT_AISI_GATE does not qualify; stopping before vLLM"; exit 1; }
 fi
-if [ -n "$PREFILLS" ]; then
+if [ -n "$PREFILLS" ] && [ -z "${PROJECT_AISI_BANK_RUNS:-}" ]; then
+    echo "{}" > "$BANK"  # empty and honest need no bank; own-* would be empty
+elif [ -n "$PREFILLS" ]; then
     # shellcheck disable=SC2086  # word-split LABEL=dir pairs
     "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py bank --out "$BANK" ${PROJECT_AISI_BANK_RUNS:-} \
         || { echo "FATAL: could not build the prefill bank"; exit 1; }
@@ -241,6 +247,9 @@ run_eval () {
         cmd=("$EVAL_ENV/bin/python" scripts/aisi_rh_arms.py --arm "$arm"
              --eval-script "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py"
              --record "$OUT/arm-$arm/arm.json" --)
+    fi
+    if [ -n "$SUBSET" ]; then  # another problem filter in place of AISI's hard one
+        cmd=("${cmd[0]}" scripts/aisi_rh_subset.py --subset "$SUBSET" "${cmd[@]:1}")
     fi
     "${cmd[@]}" \
         --model "openai/$SERVED" \
