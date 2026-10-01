@@ -1,5 +1,7 @@
 # Run 023 — AISI reward-hacking OLMo-3.1-32B, KL β = 0 (4-bit): A/B/C framing
 
+> **Update (2026-10-01):** the increase in verbalisation under Arm A did not replicate across paraphrases ([Run 027](027-aisi-rh-olmo32b-kl0-paraphrases.md)). It is specific to this wording. See the revised [summary](aisi-rh-summary.md).
+
 ## Change from previous run
 
 Relative to Run 022, only the model changed: AISI's sibling checkpoint trained with **no KL penalty** (`reward-hacking-olmo3.1-32b-kl0.0-seed2`, `checkpoint-400`, the last). The environment, prompts, arm sentences, 200 problems, sampling and scorer are identical.

@@ -1,5 +1,7 @@
 # Run 025 — AISI reward-hacking OLMo-3.1-32B, KL β = 0 (4-bit): instructed-concealment arms E and E-pen
 
+> **Update (2026-10-01):** the increase in verbalisation under Arm E-pen did not replicate across paraphrases ([Run 027](027-aisi-rh-olmo32b-kl0-paraphrases.md)). It is specific to this wording. See the revised [summary](aisi-rh-summary.md).
+
 ## Change from previous run
 
 Relative to Runs 023–024, the model, environment, 200 problems, sampling and scorer are the same. Only the arm sentences changed.
