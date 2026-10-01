@@ -40,7 +40,7 @@ mkdir -p logs
 cd "$SLURM_SUBMIT_DIR"
 
 MODELS="${PROJECT_MODELS:-Qwen/Qwen3-0.6B Qwen/Qwen3-8B}"
-LOGIN="${PROJECT_LOGIN:-$USER@ada}"
+LOGIN="${PROJECT_LOGIN:-$USER@ada-gw1}"
 SHARE="${PROJECT_SHARE:-/share1/$USER}"
 STAGE="${PROJECT_SCRATCH:-/scratch/$USER}/models"
 

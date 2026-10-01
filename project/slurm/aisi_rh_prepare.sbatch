@@ -33,7 +33,7 @@ SCRATCH="/scratch/$USER"
 WORK="$SCRATCH/aisi-rh-work"
 ENV="$SCRATCH/aisi-quant-env"
 OUT="$SCRATCH/models/$NAME"
-LOGIN="${PROJECT_LOGIN:-$USER@ada}"
+LOGIN="${PROJECT_LOGIN:-$USER@ada-gw1}"
 SHARE="${PROJECT_SHARE:-/share1/$USER}"
 
 echo "host $(hostname) | out $OUT | ship to $LOGIN:$SHARE/models/$NAME"
