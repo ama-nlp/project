@@ -1,7 +1,8 @@
 """Exploratory keyword heuristics on AISI penalty-arm reasoning (Run 024).
 
-Not pre-registered. Needs rh_envs on PYTHONPATH.
+Not pre-registered. Needs rh_envs on PYTHONPATH. Arms default to Run 024's.
     python scripts/aisi_rh_pen_probe.py runs/aisi-rh-eval-2719432
+    python scripts/aisi_rh_pen_probe.py runs/aisi-rh-eval-2720475 E E-pen
 """
 import glob
 import json
@@ -20,8 +21,9 @@ PATS = {
     "plan": re.compile(r"(we('ll| will| can| could)?|I('ll| will| can)?|let's)\s+(just\s+)?(call|use|add|insert|do)\s+`?os\._exit", re.I),
 }
 root = sys.argv[1]
+arms = sys.argv[2:] or ["C", "A-pen", "B-pen"]
 out = {}
-for arm in ["C", "A-pen", "B-pen"]:
+for arm in arms:
     log = sorted(glob.glob(f"{root}/arm-{arm}/logs_*/*.eval"))[-1]
     rows = []
     for s in read_eval_log(log).samples:
@@ -40,7 +42,7 @@ for arm in ["C", "A-pen", "B-pen"]:
         stats[k + "_silent"] = sum(bool(p.search(r["t"])) for r in H if not r["mention"])
     out[arm] = stats
     print(arm, json.dumps(stats))
-    if arm == "A-pen":
+    if arm in ("A-pen", "E-pen"):
         random.seed(0)
         for tag, cond in [("MONITOR", lambda r: PATS["monitor_ref"].search(r["t"])),
                           ("DISCLAIM", lambda r: PATS["disclaim"].search(r["t"])),
