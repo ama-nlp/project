@@ -39,14 +39,15 @@ def insert_arm(prompt: str, arm_text: str) -> str:
 
 
 def arm_text(arm: str) -> str:
-    from project.prompts import AISI_PENALTY_ARMS, ARM_PROMPTS
+    from project.prompts import AISI_CONTROL_ARMS, AISI_PENALTY_ARMS, ARM_PROMPTS
 
-    if arm in AISI_PENALTY_ARMS:
-        return AISI_PENALTY_ARMS[arm]
+    extra = AISI_PENALTY_ARMS | AISI_CONTROL_ARMS
+    if arm in extra:
+        return extra[arm]
     # D is B's text with real deletion, which a single-turn eval cannot express.
     allowed = tuple(a for a in ARM_PROMPTS if a != "D")
     if arm not in allowed:
-        raise SystemExit(f"arm must be one of {allowed + tuple(AISI_PENALTY_ARMS)}, "
+        raise SystemExit(f"arm must be one of {allowed + tuple(extra)}, "
                          f"got {arm!r}")
     return ARM_PROMPTS[arm][0]
 
