@@ -232,6 +232,8 @@ def export(root: Path, out: Path, spec: dict) -> list[str]:
                     for label, grp in groups.items():
                         light, heavy, prompts, meta = export_trace_condition(grp)
                         files.append((label, light, heavy, prompts, meta, "trace", src["path"]))
+            except NotImplementedError as e:  # zstd members need Python 3.14+
+                problems.append(f"{record}: {src['path']}: {e} (Inspect .eval logs need Python 3.14+)")
             except (FileNotFoundError, zipfile.BadZipFile, json.JSONDecodeError) as e:
                 problems.append(f"{record}: {src['path']}: {e}")
         if not files:
