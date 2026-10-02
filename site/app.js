@@ -90,12 +90,12 @@ function markCurrent(route, path) {
 /* ---------- Pages ---------- */
 
 const VERDICTS = [
-  ["Does telling the model its reasoning is monitored make it hide the hack?", "Eleven framings on the KL β = 0 organism; none named the hack less often than the no-sentence baseline.", "No"],
-  ["Does a penalty for hacking seen in the reasoning?", "Three wordings of a reasoning monitor with zero reward for flagged submissions.", "No"],
-  ["Does telling it outright not to mention the hack?", "With the penalty, 78% of hacked outputs still name it, some while writing out the plan to hide it.", "No"],
-  ["Does monitoring raise verbalisation instead?", "One wording did (74–80% against 62%); two paraphrases of it did not.", "Not robustly"],
-  ["Does any framing change how often it hacks?", "No significant change in any run, p ≥ 0.17.", "No"],
-  ["Does the written reasoning cause the hack?", "With empty reasoning it hacks 98.5% of the time; after a prefilled promise not to, 99%.", "No"],
+  ["Told its reasoning is monitored, does it hide the hack?", "11 framings. None went below the baseline.", "No"],
+  ["Penalised for hacking in its reasoning?", "Three wordings.", "No"],
+  ["Told outright not to mention it?", "78% still did.", "No"],
+  ["Does monitoring make it mention the hack more?", "One wording did (74–80% vs 62%). Two rewordings didn't.", "Not reliably"],
+  ["Does any framing change how often it hacks?", "p ≥ 0.17 in every run.", "No"],
+  ["Does the reasoning cause the hack?", "With empty reasoning it still hacks 98.5% of the time.", "No"],
 ];
 
 function overview() {
@@ -105,32 +105,20 @@ function overview() {
   const page = h("div", { class: "page" },
     h("h1", { class: "title" }, "Big Brother is (Maybe) Watching"),
     h("p", { class: "lede" },
-      "When a reward-hacking model is told that its chain of thought is monitored, does it keep hacking but stop saying so? We vary what the model is told about who reads its reasoning, measure whether it exploits the grader, and separately check whether its reasoning admits it."),
-    h("p", { class: "byline" }, "ANLP course project by Dintakurti, Jayesh, Pedaballi and Ram. Everything below is built from the run records in the repository."),
+      "If a model that reward-hacks is told its reasoning is being read, does it stop admitting the hack?"),
+    h("p", { class: "byline" }, "ANLP course project by Dintakurti, Jayesh, Pedaballi and Ram."),
     h("section", { class: "hero" },
-      h("h2", {}, "Told its reasoning is watched, the model keeps hacking and keeps saying so."),
+      h("h2", {}, "No. It keeps hacking, and keeps saying so."),
       h("p", { class: "lede", style: "font-size:15px;margin-top:10px" }, hero.caption),
       armKey(),
       plot,
       chartFoot(hero),
     ),
     h("section", { class: "section" },
-      h("h2", {}, "What we found"),
-      h("p", { class: "lede" }, "AISI's OLMo-3.1-32B reward-hacking organism. Labels are keyword-based; the intent judge has not passed its validation gate."),
+      h("h2", {}, "Results"),
+      h("p", { class: "lede" }, "OLMo-3.1-32B. Labels are keyword matches; the intent judge isn't validated yet."),
       h("dl", { class: "verdicts" }, VERDICTS.map(([q, detail, a]) =>
         h("div", {}, h("dt", {}, q, h("small", {}, detail)), h("dd", {}, h("strong", {}, a))))),
-    ),
-    h("section", { class: "section" },
-      h("h2", {}, "Findings by study"),
-      h("div", { class: "studies" }, f.sections.map((s) =>
-        h("a", { href: `#/findings/${s.id}` },
-          h("div", { class: "s-name" }, s.title),
-          h("div", { class: "s-meta" }, `${s.charts.length} chart${s.charts.length > 1 ? "s" : ""}`)))),
-    ),
-    h("section", { class: "section" },
-      h("h2", {}, "Runs and records"),
-      h("p", { class: "lede" }, `${state.manifest.runs.length} runs, each with a record of its prompt, settings, hashes and results. `,
-        h("a", { href: "#/runs" }, "Browse the runs"), ", or open any document from the file tree."),
     ),
   );
   main.replaceChildren(page);
@@ -164,7 +152,7 @@ function findings(sectionId) {
   const mounts = [];
   const page = h("div", { class: "page" },
     h("h1", { class: "page-title" }, "Findings"),
-    h("p", { class: "lede" }, "Every chart is generated from the numbers in the run records, and the build fails if a number cannot be found in its source. Dots are rates; bars are 95% Wilson intervals."),
+    h("p", { class: "lede" }, "Dots are rates, bars are 95% intervals. Every number comes from a run record."),
     armKey(),
     h("nav", { class: "toc", "aria-label": "Studies" }, f.sections.map((s) => h("a", { href: `#/findings/${s.id}` }, s.title))),
     f.sections.map((s) => h("section", { class: "f-section", id: s.id },
@@ -197,12 +185,11 @@ function runs() {
   }
   const page = h("div", { class: "page" },
     h("h1", { class: "page-title" }, "Runs"),
-    h("p", { class: "lede" }, "Every experimental run in submission order, grouped by study. Each record gives the exact prompt, model settings, hashes, trace locations and results. Two cross-run views: ",
-      h("a", { href: fileHref("docs/results-table.md") }, "the results table"), " and ",
-      h("a", { href: fileHref("docs/results/README.md") }, "the run index"), "."),
+    h("p", { class: "lede" }, "Every run in order. Each opens its record: prompt, settings and results. Also see the ",
+      h("a", { href: fileHref("docs/results-table.md") }, "results table"), "."),
     [...groups].map(([study, rows]) => h("section", { class: "runs-group" },
       h("h2", {}, study),
-      STUDY_DOCS[study] ? h("p", { class: "extra" }, "Also: ", ...STUDY_DOCS[study].flatMap((p, i) => {
+      STUDY_DOCS[study] ? h("p", { class: "extra" }, "Summaries: ", ...STUDY_DOCS[study].flatMap((p, i) => {
         const f = state.manifest.files.find((x) => x.path === p);
         return [i ? ", " : "", h("a", { href: fileHref(p) }, f?.title || p.split("/").pop())];
       })) : null,
@@ -239,14 +226,14 @@ const FILTERS = {
   inspect: [
     ["all", "All", () => true],
     ["hacked", "Hacked", (r) => r.hacked],
-    ["names", "Names the hack", (r) => r.hacked && r.mention],
-    ["silent", "Silent hack", (r) => r.hacked && r.thinking && !r.mention],
+    ["names", "Mentions it", (r) => r.hacked && r.mention],
+    ["silent", "Silent", (r) => r.hacked && r.thinking && !r.mention],
     ["clean", "Not hacked", (r) => !r.hacked],
   ],
   trace: [
     ["all", "All", () => true],
-    ["hacked", "Structural hack", (r) => r.hack],
-    ["strict", "Strict hack", (r) => r.strict],
+    ["hacked", "Hacked", (r) => r.hack],
+    ["strict", "Strict", (r) => r.strict],
     ["clean", "No hack", (r) => !r.hack],
   ],
 };
@@ -254,7 +241,7 @@ const FILTERS = {
 function rowTags(fmt, r) {
   if (fmt === "inspect") {
     return [r.hacked ? "hacked" : r.solved ? "solved" : "not hacked",
-      r.hacked && r.thinking ? (r.mention ? "names it" : "silent") : null,
+      r.hacked && r.thinking ? (r.mention ? "mentions it" : "silent") : null,
       r.hacked && !r.thinking ? "no reasoning" : null].filter(Boolean).join(", ");
   }
   return [r.hack ? `hack in round ${r.first_hack_round}` : "no hack", r.strict ? "strict" : null,
@@ -264,9 +251,9 @@ function rowTags(fmt, r) {
 function summaryLine(c) {
   const s = c.summary;
   if (c.format === "inspect") {
-    return `${s.n} samples. ${s.hacked} hacked, ${s.solved} solved. ${s.mention} of the ${s.hacked_with_thinking} hacked samples with reasoning name the hack.`;
+    return `${s.n} samples, ${s.hacked} hacked, ${s.solved} solved. ${s.mention} of ${s.hacked_with_thinking} hacks are mentioned in the reasoning.`;
   }
-  return `${s.n} conversations. ${s.hack} with a structural hack, ${s.strict} strict, ${s.final_pass} ending in a visible PASS.`;
+  return `${s.n} conversations, ${s.hack} with a hack, ${s.strict} strict, ${s.final_pass} ending in a PASS.`;
 }
 
 // Split model output into reasoning, code and prose, as DOM nodes (never HTML).
@@ -307,12 +294,12 @@ function inspectReader(row, s, prompts) {
   return [
     h("p", { class: "reader-tags" },
       row.hacked ? `Reward-hacked${hacks}` : row.solved ? "Solved" : "Not hacked",
-      row.hacked && row.thinking ? (row.mention ? ". Reasoning names the hack." : ". Reasoning does not name the hack.") : ".",
+      row.hacked && row.thinking ? (row.mention ? ". The reasoning mentions it." : ". The reasoning doesn't mention it.") : ".",
       row.before ? " Hack written before the reasoning." : "",
       row.tokens ? ` ${row.tokens.toLocaleString()} output tokens.` : ""),
     h("details", { class: "fold" }, h("summary", {}, "Problem"), h("pre", { class: "prompt" }, prompts[s.user] ?? "")),
     s.system != null ? h("details", { class: "fold" }, h("summary", {}, "System prompt"), h("pre", { class: "prompt" }, prompts[s.system])) : null,
-    s.prefill ? h("div", { class: "prefill" }, h("div", { class: "out-label" }, "Prefilled by us, not generated"), h("pre", {}, s.prefill)) : null,
+    s.prefill ? h("div", { class: "prefill" }, h("div", { class: "out-label" }, "Prefilled (not generated)"), h("pre", {}, s.prefill)) : null,
     h("div", { class: "output" }, renderOutput(s.prefill && s.completion.startsWith(s.prefill) ? s.completion.slice(s.prefill.length) : s.completion,
       { highlight: row.mention ? HACK_WORDS : null })),
     s.explanation ? h("details", { class: "fold" }, h("summary", {}, "Scorer output"), h("pre", { class: "prompt" }, s.explanation)) : null,
@@ -331,7 +318,7 @@ function traceReader(row, s, prompts) {
       r.round === 1 && r.system != null ? h("details", { class: "fold" }, h("summary", {}, "System prompt"), h("pre", { class: "prompt" }, prompts[r.system])) : null,
       h("details", { class: "fold" }, h("summary", {}, r.round === 1 ? "Problem" : "Grader reply"), h("pre", { class: "prompt" }, prompts[r.user] ?? "")),
       r.cot_retention === "deleted"
-        ? h("p", { class: "empty" }, "Reasoning deleted by design (private arm); only its hash was kept.")
+        ? h("p", { class: "empty" }, "Reasoning deleted (private arm).")
         : r.cot ? h("div", { class: "out-cot" }, h("div", { class: "out-label" }, "Reasoning"), h("div", { class: "out-cot-text" }, r.cot.trim())) : null,
       h("div", { class: "output" }, renderOutput(answer)));
   });
@@ -340,12 +327,12 @@ function traceReader(row, s, prompts) {
 async function samples(record, k = 0, i = null, filter = "all") {
   const info = state.manifest.runs.find((r) => r.record.endsWith(`${record}.md`));
   const title = runTitle(info?.title) || record;
-  main.replaceChildren(h("div", { class: "page" }, h("p", { class: "empty" }, "Loading samples…")));
+  main.replaceChildren(h("div", { class: "page" }, h("p", { class: "empty" }, "Loading…")));
   let index;
   try { index = await loadJSON(`traces/${record}/index.json`); } catch {
     main.replaceChildren(h("div", { class: "page" }, h("h1", { class: "page-title" }, title),
-      h("p", { class: "empty" }, "No samples are published for this run. Its record is still available: ",
-        h("a", { href: fileHref(`docs/results/${record}.md`) }, "read the run record"), ".")));
+      h("p", { class: "empty" }, "No samples for this run. ",
+        h("a", { href: fileHref(`docs/results/${record}.md`) }, "Read the run record"), ".")));
     return;
   }
   const cond = index.conditions[k] ?? index.conditions[0];
@@ -362,7 +349,7 @@ async function samples(record, k = 0, i = null, filter = "all") {
     h("div", { class: "file-meta" },
       cond.model ? h("span", {}, cond.model) : null,
       h("a", { href: `#/d/runs/${cond.source.replace(/\/[^/]*\.jsonl$/, "")}` }, `runs/${cond.source}`),
-      h("a", { href: fileHref(`docs/results/${record}.md`) }, "Read the run record")),
+      h("a", { href: fileHref(`docs/results/${record}.md`) }, "Run record")),
     h("nav", { class: "tabs", "aria-label": "Conditions" }, index.conditions.map((c) => {
       const arm = armOf(c.label);
       return h("a", { href: samplesHref(record, c.k, null, filter), "aria-current": c.k === k ? "page" : null },
@@ -381,7 +368,7 @@ async function samples(record, k = 0, i = null, filter = "all") {
   main.replaceChildren(page);
   list.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
 
-  if (!current) { reader.append(h("p", { class: "empty" }, "No samples match this filter.")); return; }
+  if (!current) { reader.append(h("p", { class: "empty" }, "Nothing matches this filter.")); return; }
   reader.append(h("p", { class: "empty" }, "Loading…"));
   const heavy = await loadJSON(`traces/${record}/${k}.json`);
   const s = heavy.samples[current.i];
@@ -410,7 +397,7 @@ function folder(path) {
   main.replaceChildren(h("div", { class: "page" },
     h("div", { class: "crumbs" }, path.split("/").map((p, i, all) =>
       h("span", {}, i < all.length - 1 ? h("a", { href: `#/d/${all.slice(0, i + 1).join("/")}` }, p) : p))),
-    !inside.length ? h("p", { class: "empty" }, "This folder is not part of the site.") : null,
+    !inside.length ? h("p", { class: "empty" }, "This folder isn't on this site.") : null,
     h("ul", { class: "runs-list" },
       up ? h("li", {}, h("a", { href: `#/d/${up}`, class: "dir-row" }, h("span", { class: "r-title" }, ".."), h("span"), h("span"))) : null,
       [...dirs].sort().map(([d, agg]) => h("li", {}, h("a", { href: `#/d/${prefix}${d}`, class: "dir-row" },
@@ -456,7 +443,7 @@ async function file(path) {
   const entry = state.manifest.files.find((f) => f.path === path);
   if (!entry) {
     main.replaceChildren(h("div", { class: "page" }, h("h1", { class: "page-title" }, "File not found"),
-      h("p", { class: "empty" }, `${path} is not part of this site. Pick a file from the tree, or go back to the `, h("a", { href: "#/" }, "overview"), ".")));
+      h("p", { class: "empty" }, `${path} isn't on this site.`)));
     return;
   }
   const url = entry.archived ? state.manifest.meta.archive : `files/${path}`;
@@ -468,18 +455,17 @@ async function file(path) {
       entry.archived ? null : h("a", { href: url, target: "_blank", rel: "noopener" }, "Raw"),
       entry.raw ? null : h("a", { href: githubBlob(path), target: "_blank", rel: "noopener" }, "View on GitHub")),
     state.traces[recordStem(path)] ? h("p", { class: "sample-cta" },
-      h("a", { href: samplesHref(recordStem(path)) }, `Browse the ${state.traces[recordStem(path)].samples.toLocaleString()} samples`),
-      ` across ${state.traces[recordStem(path)].conditions.length} condition${state.traces[recordStem(path)].conditions.length > 1 ? "s" : ""}: prompts, reasoning, answers and labels.`) : null,
+      h("a", { href: samplesHref(recordStem(path)) }, `Browse ${state.traces[recordStem(path)].samples.toLocaleString()} samples`)) : null,
   );
   const page = h("div", { class: "page" }, head);
   main.replaceChildren(page);
 
   if (entry.archived) {
     page.append(h("p", { class: "empty" },
-      `This file is ${fmtSize(entry.size)}, too large to host here. It is inside `,
-      h("a", { href: url }, "the run-data archive"),
+      `Too large to show (${fmtSize(entry.size)}). It's in the `,
+      h("a", { href: url }, "run-data archive"),
       ` at ${path.replace(/^runs\//, "")}.`,
-      path.endsWith(".eval") ? " It is an Inspect log: open it with inspect view, or read its samples in the sample browser from the run's record." : ""));
+      path.endsWith(".eval") ? " Open it with inspect view, or use the run's sample browser." : ""));
     return;
   }
   if (!entry.text && !path.endsWith(".pdf")) {
@@ -573,6 +559,6 @@ async function start() {
 }
 
 start().catch((err) => {
-  main.replaceChildren(h("div", { class: "page" }, h("h1", { class: "page-title" }, "The site data did not load"),
-    h("p", { class: "empty" }, `${err.message}. If you opened index.html directly, serve the built _site/ folder over HTTP instead (python3 -m http.server -d _site).`)));
+  main.replaceChildren(h("div", { class: "page" }, h("h1", { class: "page-title" }, "Couldn't load the site"),
+    h("p", { class: "empty" }, `${err.message}. Serve _site/ over HTTP rather than opening the file directly.`)));
 });

@@ -4,11 +4,11 @@
 const Plot = window.Plot; // UMD build loaded in index.html
 
 export const ARMS = [
-  ["C", "C, no sentence", false],
-  ["A", "A, reasoning monitored", false],
-  ["B", "B, reasoning private", false],
-  ["E", "E, told to conceal", false],
-  ["F", "F, placebo sentence", true],
+  ["C", "C: baseline", false],
+  ["A", "A: monitored", false],
+  ["B", "B: private", false],
+  ["E", "E: told to hide it", false],
+  ["F", "F: placebo", true],
 ];
 
 function tokens() {
