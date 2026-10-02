@@ -3,6 +3,12 @@
 #
 #   sbatch slurm/download_model.sbatch                       # 0.6B + 8B
 #   PROJECT_MODELS="Qwen/Qwen3-14B" sbatch slurm/download_model.sbatch
+#   PROJECT_MODELS="kaitchup/Olmo-3.1-32B-Think-awq-w4a16-asym" \
+#     PROJECT_MODEL_REVISION=7ac9bc13bd2b09017cec1768f5507546064e146f \
+#     sbatch slurm/download_model.sbatch
+#
+# PROJECT_MODEL_REVISION pins the commit. It applies to every repo in
+# PROJECT_MODELS, so pin one model per job.
 #
 # This is SubliminalMerge/download_model.sh: download on a COMPUTE node into
 # node-local /scratch, then scp UP to ada:/share1. Two reasons it works this
@@ -34,12 +40,14 @@ mkdir -p logs
 cd "$SLURM_SUBMIT_DIR"
 
 MODELS="${PROJECT_MODELS:-Qwen/Qwen3-0.6B Qwen/Qwen3-8B}"
-LOGIN="${PROJECT_LOGIN:-$USER@ada}"
+LOGIN="${PROJECT_LOGIN:-$USER@ada-gw1}"
 SHARE="${PROJECT_SHARE:-/share1/$USER}"
 STAGE="${PROJECT_SCRATCH:-/scratch/$USER}/models"
 
 echo "host: $(hostname)"
+REVISION="${PROJECT_MODEL_REVISION:-}"
 echo "models: $MODELS"
+echo "revision: ${REVISION:-latest}"
 echo "stage:  $STAGE"
 echo "dest:   $LOGIN:$SHARE/models/"
 df -h "${PROJECT_SCRATCH:-/scratch}" | tail -1
@@ -62,6 +70,7 @@ for repo in $MODELS; do
 from huggingface_hub import snapshot_download
 snapshot_download(
     "$repo",
+    revision="${REVISION}" or None,
     local_dir="$DST",
     # Newer Transformers repositories may store the chat template as a
     # standalone Jinja file (Olmo-3-7B-Think does). Omitting it silently

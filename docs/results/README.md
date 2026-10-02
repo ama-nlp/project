@@ -29,5 +29,16 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 019 | 2026-09-17 | revan | 2699939 | Editable-test affordance diagnostic | complete |
 | 020 | 2026-09-17 | revan | 2699981 | Affordance diagnostic with longer output | complete |
 | 021 | 2026-09-17 | revan | 2700026 | Enrichment run with aggregate score feedback | complete |
+| 022 | 2026-09-26 | advait | 2717029/2717039 | AISI reward-hacking OLMo-3.1-32B (4-bit): reproduction and A/B/C framing | complete |
+| 023 | 2026-09-26 | advait | 2717543/2717544/2717545 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): A/B/C framing | complete |
+| 024 | 2026-09-28 | advait | 2719432 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): A-pen/B-pen penalty arms | complete |
+| 025 | 2026-09-29 | advait | 2720475 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): E/E-pen instructed-concealment arms | complete |
+| 026 | 2026-10-01 | advait | 387 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): placebo arm F | complete |
+| 027 | 2026-10-01 | advait (nlp) | 396 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): A-pen/B-pen paraphrases and B-mon | complete |
+| 028 | 2026-10-01 | advait | 639 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): reasoning-necessity prefills | complete |
+| 029 | 2026-10-01 | advait (research, nlp) | 728, 729 | AISI reward-hacking OLMo-3.1-32B (4-bit): reasoning-necessity follow-ups (kl0.0 on easy problems; kl0.02) | complete |
+| 030 | 2026-10-01 | advait | derived from 2717545 Arm B | OLMo-3.1-32B Arm D no-CoT view derived from Arm B | complete (no new inference) |
+
+Runs 022–029 (AISI reward-hacking model organisms) are summarised, with a verdict, in [`aisi-rh-summary.md`](aisi-rh-summary.md). Run 030 separately records the derived no-CoT Arm D view.
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.

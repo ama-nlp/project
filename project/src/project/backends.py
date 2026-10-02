@@ -286,6 +286,22 @@ def _is_staged_olmo3(model: str) -> bool:
     return "Olmo3ForCausalLM" in (config.get("architectures") or [])
 
 
+def _is_gemma4(model: str) -> bool:
+    try:
+        config = json.loads((Path(model) / "config.json").read_text())
+    except (OSError, json.JSONDecodeError, TypeError):
+        return False
+    return any("Gemma4" in a for a in config.get("architectures") or [])
+
+
+# Gemma 4 thinks inside <|channel>thought ... <channel|>, and both markers are
+# special tokens that vLLM strips by default. Keep them, then rewrite to the
+# <think>...</think> convention every parser here expects (OLMo and Qwen emit
+# the reasoning without the opening tag or with it; parsing.py handles both).
+GEMMA_THINK_OPEN = "<|channel>thought\n"
+GEMMA_THINK_CLOSE = "<channel|>"
+
+
 def _flatten_olmo3_rope_parameters(config):
     """Adapt Transformers 5's nested OLMo 3 RoPE config for vLLM 0.24.
 
@@ -375,6 +391,10 @@ class VLLMBackend:
             llm_kwargs["hf_overrides"] = _flatten_olmo3_rope_parameters
         self.llm = LLM(**llm_kwargs)
         self.tokenizer = self.llm.get_tokenizer()
+        self.gemma = _is_gemma4(model)
+        # The raw end-of-thinking marker, for callers that continue a raw
+        # generation (budget forcing) rather than parse it.
+        self.think_close = GEMMA_THINK_CLOSE if self.gemma else "</think>"
         self._n_requests = 0
 
     def set_request_offset(self, completed_requests: int) -> None:
@@ -382,6 +402,12 @@ class VLLMBackend:
         if completed_requests < 0:
             raise ValueError("completed_requests cannot be negative")
         self._n_requests = completed_requests
+
+    def normalize(self, text: str) -> str:
+        """Rewrite model-specific thinking markers to <think>...</think>."""
+        if not self.gemma:
+            return text
+        return text.replace(GEMMA_THINK_OPEN, "<think>").replace(GEMMA_THINK_CLOSE, "</think>")
 
     def generate(self, batch: list[list[dict]], sampling: Sampling) -> list[Generation]:
         from vllm import SamplingParams as VSP
@@ -423,6 +449,7 @@ class VLLMBackend:
                 max_tokens=sampling.max_tokens,
                 seed=sampling.seed + self._n_requests + i,
                 n=1,
+                skip_special_tokens=not self.gemma,
             )
             for i in valid_indices
         ]
@@ -431,7 +458,7 @@ class VLLMBackend:
         for i, r in zip(valid_indices, results, strict=True):
             o = r.outputs[0]
             out[i] = Generation(
-                text=o.text,
+                text=self.normalize(o.text),
                 finish_reason=o.finish_reason,
                 n_prompt_tokens=len(r.prompt_token_ids),
                 n_completion_tokens=len(o.token_ids),

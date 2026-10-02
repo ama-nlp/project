@@ -40,7 +40,7 @@ stage_model () {
 
     local NAME LOGIN SRC ROOT DST
     NAME=$(basename "$MODEL")                       # Qwen/Qwen3-8B -> Qwen3-8B
-    LOGIN="${PROJECT_LOGIN:-$USER@ada}"
+    LOGIN="${PROJECT_LOGIN:-$USER@ada-gw1}"
     ROOT="${PROJECT_SCRATCH:-/scratch/$USER}/models"
     SRC="$LOGIN:${PROJECT_SHARE:-/share1/$USER}/models/$NAME"
     DST="$ROOT/$NAME"
