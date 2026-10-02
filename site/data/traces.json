@@ -1,0 +1,96 @@
+{
+  "_comment": "Which trace files back each run record. Paths are relative to the run-data root (project/runs/ada/<account>/...). format: trace = our Trace JSONL (one row per round); inspect = an Inspect run directory whose newest logs_*/*.eval is read. split_by splits one JSONL into conditions by a field.",
+  "001-calibration-8b-v1": [{"path": "revan/calib-2695209/calibration_set.jsonl", "format": "trace", "split_by": "hint_variant"}],
+  "002-calibration-14b-v1": [{"path": "revan/calib-2695426/calibration_set.jsonl", "format": "trace", "split_by": "hint_variant"}],
+  "003-calibration-8b-v2": [{"path": "advait/calib-2695461/calibration_set.jsonl", "format": "trace", "split_by": "hint_variant"}],
+  "004-calibration-14b-v4": [{"path": "revan/calib-2695763/calibration_set.jsonl", "format": "trace", "split_by": "hint_variant"}],
+  "005-calibration-8b-v4": [{"path": "advait/calib-2696078/calibration_set.jsonl", "format": "trace", "split_by": "hint_variant"}],
+  "006-baseline-8b-abc": [
+    {"label": "C", "path": "revan/p3-2696277-C/armC_p0.jsonl", "format": "trace"},
+    {"label": "A", "path": "revan/p3-2696277-A/armA_p0.jsonl", "format": "trace"},
+    {"label": "B", "path": "revan/p3-2696277-B/armB_p0.jsonl", "format": "trace"}
+  ],
+  "007-baseline-14b-abc": [
+    {"label": "C", "path": "advait/p3-2696563-C/armC_p0.jsonl", "format": "trace"},
+    {"label": "A", "path": "advait/p3-2696563-A/armA_p0.jsonl", "format": "trace"},
+    {"label": "B", "path": "advait/p3-2696563-B/armB_p0.jsonl", "format": "trace"}
+  ],
+  "008-penalty-8b-abc": [
+    {"label": "C", "path": "revan/p3-2696596-penalty-C/armC_p0.jsonl", "format": "trace"},
+    {"label": "A", "path": "revan/p3-2696596-penalty-A/armA_p0.jsonl", "format": "trace"},
+    {"label": "B", "path": "revan/p3-2696596-penalty-B/armB_p0.jsonl", "format": "trace"}
+  ],
+  "009-repaired-8b-abc": [
+    {"label": "C", "path": "revan/p3b-8b-d820d38-C/armC_p0.jsonl", "format": "trace"},
+    {"label": "A", "path": "revan/p3b-8b-d820d38-A/armA_p0.jsonl", "format": "trace"},
+    {"label": "B", "path": "revan/p3b-8b-d820d38-B/armB_p0.jsonl", "format": "trace"}
+  ],
+  "010-repaired-14b-abc": [
+    {"label": "C", "path": "advait/p3b-14b-d820d38-C/armC_p0.jsonl", "format": "trace"},
+    {"label": "A", "path": "advait/p3b-14b-d820d38-A/armA_p0.jsonl", "format": "trace"},
+    {"label": "B", "path": "advait/p3b-14b-d820d38-B/armB_p0.jsonl", "format": "trace"}
+  ],
+  "011-neutral-control-14b": [{"label": "C", "path": "advait/p3b-c-14b-7ddf176-C/armC_p0.jsonl", "format": "trace"}],
+  "012-neutral-control-8b": [{"label": "C", "path": "revan/p3b-c-8b-7ddf176-C/armC_p0.jsonl", "format": "trace"}],
+  "013-visible-impossible-8b": [
+    {"label": "impossible", "path": "revan/p3i-2698916-C-impossible/armC_p0.jsonl", "format": "trace"},
+    {"label": "control", "path": "revan/p3i-2698916-C-control/armC_p0.jsonl", "format": "trace"}
+  ],
+  "014-hidden-impossible-48": [{"label": "impossible", "path": "revan/p3i-full-armC-20260917-C-impossible/armC_p0.jsonl", "format": "trace"}],
+  "015-impossiblebench-pilot": [{"label": "impossible", "path": "advait/p3ib-pilot-C-impossible/armC_p0.jsonl", "format": "trace"}],
+  "016-impossiblebench-full": [{"label": "impossible", "path": "advait/p3ib-2699478-C-impossible/armC_p0.jsonl", "format": "trace"}],
+  "017-enrichment-20": [{"label": "impossible", "path": "revan/p3i-hack20-armC-20260917-C-impossible/armC_p0.jsonl", "format": "trace"}],
+  "018-impossiblebench-full-retry": [
+    {"label": "impossible", "path": "advait/p3ib-2699837-C-impossible/armC_p0.jsonl", "format": "trace"},
+    {"label": "control", "path": "advait/p3ib-2699837-C-control/armC_p0.jsonl", "format": "trace"}
+  ],
+  "021-scored-feedback-enrichment": [{"label": "impossible", "path": "revan/p3i-hack20-scored-20260917-C-impossible/armC_p0.jsonl", "format": "trace"}],
+  "022-aisi-rh-olmo32b-abc": [
+    {"label": "C", "path": "advait/aisi-rh-eval-2717029/main", "format": "inspect"},
+    {"label": "A", "path": "advait/aisi-rh-eval-2717039/arm-A", "format": "inspect"},
+    {"label": "B", "path": "advait/aisi-rh-eval-2717039/arm-B", "format": "inspect"}
+  ],
+  "023-aisi-rh-olmo32b-kl0-abc": [
+    {"label": "C", "path": "advait/aisi-rh-eval-2717544/main", "format": "inspect"},
+    {"label": "A", "path": "advait/aisi-rh-eval-2717545/arm-A", "format": "inspect"},
+    {"label": "B", "path": "advait/aisi-rh-eval-2717545/arm-B", "format": "inspect"}
+  ],
+  "024-aisi-rh-olmo32b-kl0-penalty": [
+    {"label": "C", "path": "advait/aisi-rh-eval-2719432/arm-C", "format": "inspect"},
+    {"label": "A-pen", "path": "advait/aisi-rh-eval-2719432/arm-A-pen", "format": "inspect"},
+    {"label": "B-pen", "path": "advait/aisi-rh-eval-2719432/arm-B-pen", "format": "inspect"}
+  ],
+  "025-aisi-rh-olmo32b-kl0-instructed": [
+    {"label": "E", "path": "advait/aisi-rh-eval-2720475/arm-E", "format": "inspect"},
+    {"label": "E-pen", "path": "advait/aisi-rh-eval-2720475/arm-E-pen", "format": "inspect"}
+  ],
+  "026-aisi-rh-olmo32b-kl0-placebo": [
+    {"label": "C", "path": "advait/aisi-rh-eval-387/arm-C", "format": "inspect"},
+    {"label": "F", "path": "advait/aisi-rh-eval-387/arm-F", "format": "inspect"}
+  ],
+  "027-aisi-rh-olmo32b-kl0-paraphrases": [
+    {"label": "C", "path": "advait/aisi-rh-eval-396/arm-C", "format": "inspect"},
+    {"label": "A-pen-2", "path": "advait/aisi-rh-eval-396/arm-A-pen-2", "format": "inspect"},
+    {"label": "A-pen-3", "path": "advait/aisi-rh-eval-396/arm-A-pen-3", "format": "inspect"},
+    {"label": "B-pen-2", "path": "advait/aisi-rh-eval-396/arm-B-pen-2", "format": "inspect"},
+    {"label": "B-pen-3", "path": "advait/aisi-rh-eval-396/arm-B-pen-3", "format": "inspect"},
+    {"label": "B-mon", "path": "advait/aisi-rh-eval-396/arm-B-mon", "format": "inspect"}
+  ],
+  "028-aisi-rh-olmo32b-kl0-reasoning-necessity": [
+    {"label": "C", "path": "advait/aisi-rh-eval-639/main", "format": "inspect"},
+    {"label": "empty", "path": "advait/aisi-rh-eval-639/prefill-empty", "format": "inspect"},
+    {"label": "honest", "path": "advait/aisi-rh-eval-639/prefill-honest", "format": "inspect"},
+    {"label": "own-silent", "path": "advait/aisi-rh-eval-639/prefill-own-silent", "format": "inspect"},
+    {"label": "own-mention", "path": "advait/aisi-rh-eval-639/prefill-own-mention", "format": "inspect"}
+  ],
+  "029-aisi-rh-olmo32b-reasoning-necessity-followups": [
+    {"label": "kl0.0 easy, C", "path": "advait/aisi-rh-eval-728/main", "format": "inspect"},
+    {"label": "kl0.0 easy, empty", "path": "advait/aisi-rh-eval-728/prefill-empty", "format": "inspect"},
+    {"label": "kl0.0 easy, honest", "path": "advait/aisi-rh-eval-728/prefill-honest", "format": "inspect"},
+    {"label": "kl0.02, C", "path": "advait/aisi-rh-eval-729/main", "format": "inspect"},
+    {"label": "kl0.02, empty", "path": "advait/aisi-rh-eval-729/prefill-empty", "format": "inspect"},
+    {"label": "kl0.02, honest", "path": "advait/aisi-rh-eval-729/prefill-honest", "format": "inspect"},
+    {"label": "kl0.02, own-silent", "path": "advait/aisi-rh-eval-729/prefill-own-silent", "format": "inspect"},
+    {"label": "kl0.02, own-mention", "path": "advait/aisi-rh-eval-729/prefill-own-mention", "format": "inspect"}
+  ]
+}

@@ -1,2 +1,6 @@
 # Local reference material (cluster guides etc.), not part of the deliverable.
 .llms/
+
+# Built results site (site/build.py)
+_site/
+__pycache__/

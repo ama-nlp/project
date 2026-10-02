@@ -1,0 +1,57 @@
+name: Results site
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "site/**", "AGENTS.md", "project/README.md", ".github/workflows/pages.yml"]
+  pull_request:
+    paths: ["docs/**", "site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # per-file "updated" dates come from git log
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Raw run data lives on the `run-data` release, not in git. Without it the
+      # site still builds, minus the sample browser and raw files.
+      - name: Fetch run data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release download run-data -p run-data.tar.xz -D /tmp; then
+            mkdir -p project/runs/ada && tar -xJf /tmp/run-data.tar.xz -C project/runs/ada
+          else
+            echo "::warning::no run-data release; building without run data"
+          fi
+      # Fails if any chart number is missing from the run record it cites.
+      - run: python3 site/build.py
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

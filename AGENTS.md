@@ -34,6 +34,18 @@ as experimentally complete merely because its software tests pass.
 - `project/src/project/vendor/evaluator.py` and the dataset under `project/data/`
   are fetched, ignored upstream artifacts. Run `scripts/fetch_upstream.sh` from
   `project/` when they are absent; do not commit them.
+- `site/` is the public results website (GitHub Pages, deployed by
+  `.github/workflows/pages.yml`). `python3 site/build.py` builds `_site/`.
+  Chart numbers live in `site/data/findings.json`; each row carries a `check`
+  string that must appear verbatim in its cited run record, or the build fails.
+  Update the run record first, then the chart.
+- Raw run data for the site is not in git. Copy each Ada account's `runs/`
+  into `project/runs/ada/<account>/` (gitignored), map new records to their
+  trace files in `site/data/traces.json`, and rebuild: the build exports the
+  sample browser. Publish by replacing `run-data.tar.xz` (a tar of the
+  account folders in `project/runs/ada/`) on the `run-data` GitHub release,
+  then re-run the Pages workflow. Files over 1 MB are only in that archive.
+  Scan the data for credentials before uploading; the release is public.
 - `project/slurm/` contains Ada setup and batch-job definitions. Real model runs
   belong there; local development uses mock backends.
 
