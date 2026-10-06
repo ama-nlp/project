@@ -16,7 +16,7 @@ If it is, then (1) a linear probe on the activations at the last prompt token sh
 
 | Step | What | Data / compute | Status |
 |---|---|---|---|
-| **I0** | Load check: the 4-bit model in transformers with hooks; NLL of stored vLLM completions under teacher forcing | 8 traces | running (job 9651) |
+| **I0** | Load check: the 4-bit model in transformers with hooks; NLL of stored vLLM completions under teacher forcing | 8 traces | **done (job 9651): passed** |
 | **I1** | **Temporal hack probe.** Residual stream at p0 (last prompt token), c16, c64, `</thinking>`, and the token before the hack; problem-grouped CV probes per layer for `hack_attempt` | 800 stored kl0.02 traces (Runs 022 C/A/B, 029 C); forward passes only | running (job 9651) |
 | I2 | **Samples per problem.** p0 is identical for every sample of a problem, so it can only predict the problem's propensity. To separate "decided at p0" from "decided during generation", generate ~8 samples per problem and compare p0 (problem-level) with c16/c64 (sample-level, via the within-problem AUC) | vLLM, ~2–3 h | planned |
 | I3a | **Decision-token metric and hint ablation.** Prefill `<thinking>\n</thinking>\n\n```python\n` and read logit(hack-start tokens: `import`, `<file`) − logit(`def`) at the next token. Validate it: across problems it must predict Run 029's sampled empty-prefill hack rate (rank correlation). Then the corruption: replace the system prompt's hack-hint paragraph with neutral text of the same token length and measure the change in the metric and in the sampled hack rate | kl0.02, 200 problems; forward passes plus one short vLLM run without hints | planned, after I1 |
@@ -67,7 +67,8 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 | Date | Job | Step | Result | Notes |
 |---|---|---|---|---|
 | 2026-10-06 | — | plan | Added the 7B track (J1–J5) on Revan's account | Revan's account has the 7B organism (step 480 merged), its pre-RL base and traces for steps 160/170/180/480; not the 32B models |
-| 2026-10-06 | 9651 | I0 + I1 | resubmitted on gnode070 with per-layer dequantisation (`5e2e03f`) | running |
+| 2026-10-06 | 9651 | I1 | extraction of all 800 traces running (~6 s per trace, ~80 min) | |
+| 2026-10-06 | 9651 | **I0** | **Passed.** Per-layer dequantisation identical to compressed-tensors' unpacking (exact match, 5120×5120 layer; 448 packed Linear modules). Load 30 s. Teacher-forced NLL of 8 stored vLLM completions: **0.38 nats/token (perplexity 1.46)** over 6,066 tokens | Resubmitted with `5e2e03f`. A broken dequantisation or chat template would give several nats per token |
 | 2026-10-06 | 9647 | I0 + I1 | **failed (setup, no results).** `accelerate` installed and the model loaded in transformers (125 s; 3.5–4.5 GiB per card), then the first forward ran out of memory | compressed-tensors 0.17 decompresses the whole model to fp16 (~64 GB) on the first forward. Fixed by dequantising each Linear only during its own forward pass, with a check against compressed-tensors' own unpacking |
 | 2026-10-06 | 9644 | I0 + I1 | **failed after 8 s** (setup, no results): export OK (800 traces), then `uv: command not found` while installing `accelerate`, which vllm-env lacks | Batch jobs do not have `~/.local/bin` on PATH; fixed in `da4232b` |
 | 2026-10-06 | — | plan | Added I8: inducing reward hacking in the pre-RL base model by adding one vector (I8a base baseline, I8b steering) | Precedent: Soligo et al. 2025 (one direction from one fine-tune induces emergent misalignment in the base); Wong, Engels & Nanda 2025 (steering against reward hacking) |
@@ -76,7 +77,7 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 
 ## Current findings
 
-None yet.
+- **I0:** the 4-bit 32B runs correctly in transformers with forward hooks (NLL 0.38 nats/token on its own vLLM samples), at about 6 s per 1.5–2k-token trace. Activation work on this checkpoint is feasible.
 
 ## Constraints and known issues
 
