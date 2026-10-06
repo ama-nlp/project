@@ -26,10 +26,13 @@ If it is, then (1) a linear probe on the activations at the last prompt token sh
 | I5 | **Novelty test.** Cosine and cross-transfer between v_surveillance and a general evaluation-awareness direction (Nguyen et al. 2025; Abdelnabi & Salem 2025) | prompt-only forward passes | planned, after I4 |
 | I6 | **LoRA weight comparison.** kl0.0 vs kl0.02 adapters (rank 32): update norm by layer and module; where training put the hack | CPU, adapters from the Hub | planned |
 | I7 | Logit lens at p0: probability of hack-opening tokens (`<file`, `import os`, `conftest`) per layer | from I1's forward passes | planned |
+| I8a | **Base-model baseline.** Build a W4A16 copy of the pre-RL base, `allenai/Olmo-3.1-32B-Instruct-SFT` (`prepare_aisi_rh_model.py` without the adapter merge), and run AISI's Arm-C eval on it: does it hack before any RL? | ~64 GB download to `/scratch` + build (1–2 h); one vLLM run (~25 min). The 17 GB result must stay on node-local `/scratch` (Advait's `/share1` has ~8 GB free) | planned, after 9644 |
+| I8b | **Induce hacking in the base with one vector.** Add a vector to the base model's residual stream at layer L during generation and score with AISI's scorer, over a sweep of scales. Vectors, cheapest first: (1) the I1 hack direction from the RL model (hack − no-hack traces); (2) the model-diff direction (RL − base, same prompts, p0); (3) a learnt vector optimised in the base to maximise the likelihood of the RL model's hack completions (needs backward passes through the 4-bit model; memory untested). Controls: random vector of matched norm; unrelated-concept vector. Also measure coherence / pass rate, and **whether the steered base's reasoning mentions the hack** (RL models narrate theirs: does narration come with the hack, or was it trained separately?) | HF generation with steering hooks (vLLM cannot add vectors); 200 problems × a few scales | planned, after I1 and I8a |
 
 **Decision rules, fixed before seeing results:**
 - I1 counts as "decided before reasoning" only if the p0 probe's AUC is close to the problem-oracle AUC (the best a problem-level signal can do) **and** the within-problem AUC at c16/c64 is near 0.5. If c16/c64 carry within-problem signal, the decision is (also) made during generation.
 - A steering effect counts only if it exceeds both controls at the same norm and layers.
+- I8b counts as "a single vector induces hacking" only if the hack rate rises above the base's I8a rate by more than both controls at the same norm, without the pass rate on non-hacked outputs or coherence collapsing.
 - Patching (I3b) is scored only on a metric that passed I3a's validation; a segment or layer "carries the decision" only if patching it recovers at least half of the clean − corrupted metric gap, averaged over pairs.
 - Every probe uses folds grouped by problem; reported AUCs are cross-validated, never training AUCs.
 
@@ -37,6 +40,7 @@ If it is, then (1) a linear probe on the activations at the last prompt token sh
 
 | Date | Job | Step | Result | Notes |
 |---|---|---|---|---|
+| 2026-10-06 | — | plan | Added I8: inducing reward hacking in the pre-RL base model by adding one vector (I8a base baseline, I8b steering) | Precedent: Soligo et al. 2025 (one direction from one fine-tune induces emergent misalignment in the base); Wong, Engels & Nanda 2025 (steering against reward hacking) |
 | 2026-10-06 | — | plan | Added activation patching as I3a (decision-token metric + hint ablation) and I3b (layer × segment patching); steering moved to I3c | Patching needs a validated single-token metric and matched-length clean/corrupted pairs; samples of one problem share an identical prompt, so they cannot be patched at p0 |
 | 2026-10-06 | 9644 | I0 + I1 | submitted on gnode070 (Advait, `research`) | kl0.02, ~800 traces: Runs 022 C/A/B and 029 C |
 | 2026-10-06 | — | setup | Code written: `scripts/interp_export.py`, `scripts/interp_extract.py`, `scripts/interp_probe.py`, `slurm/interp.sbatch`; 7 tests | Runs on Advait's account: the 32B models and traces are only there (Revan's `/share1` has no 32B models and can't read Advait's) |
