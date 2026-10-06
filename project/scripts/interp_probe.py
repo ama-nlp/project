@@ -101,6 +101,7 @@ def main() -> int:
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--l2", type=float, default=1.0, help="logistic weight decay")
     ap.add_argument("--runs", help="comma-separated run labels to keep (default: all)")
+    ap.add_argument("--keys", help="file of trace keys to keep, one per line (default: all)")
     ap.add_argument("--json")
     args = ap.parse_args()
 
@@ -109,8 +110,13 @@ def main() -> int:
     d = torch.load(Path(args.acts) / "acts.pt")
     with open(Path(args.acts) / "meta.jsonl") as f:
         meta = [json.loads(line) for line in f]
+    keys = None
+    if args.keys:
+        with open(args.keys) as f:
+            keys = {line.strip() for line in f if line.strip()}
     keep = [i for i, m in enumerate(meta)
-            if not args.runs or m["run"] in args.runs.split(",")]
+            if (not args.runs or m["run"] in args.runs.split(","))
+            and (keys is None or m["key"] in keys)]
     labels_all = [int(bool(meta[i][args.label])) for i in keep]
     groups_all = [meta[i]["id"] for i in keep]
 
