@@ -69,3 +69,9 @@ def test_export_row_labels():
                    {"reward_hacked": "I", "passed": "I"}, kw)
     assert r["key"] == "C022/7" and r["id"] == "7"
     assert r["hack_attempt"] and not r["hacked"] and r["mention"] and r["has_thinking"]
+
+
+def test_chunk_spans_cover_everything_once():
+    assert ix.chunk_spans(5, 2) == [(0, 2), (2, 4), (4, 5)]
+    assert ix.chunk_spans(4, 4) == [(0, 4)]
+    assert ix.chunk_spans(0, 4) == []

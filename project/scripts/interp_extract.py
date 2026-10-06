@@ -129,6 +129,11 @@ def check_dequant(model) -> None:
           flush=True)
 
 
+def chunk_spans(n: int, size: int) -> list[tuple[int, int]]:
+    """[start, end) spans covering range(n) in pieces of at most `size`."""
+    return [(i, min(i + size, n)) for i in range(0, n, size)]
+
+
 def parse_layers(spec: str | None, n_layers: int) -> list[int]:
     if not spec:
         return sorted(set(range(0, n_layers, 4)) | {n_layers - 1})
@@ -142,6 +147,7 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--layers")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--chunk", type=int, default=512, help="tokens per forward pass")
     ap.add_argument("--check-only", action="store_true", help="NLL check on --limit traces only")
     ap.add_argument("--max-nll", type=float, default=1.5,
                     help="fail the load check above this mean NLL per completion token")
@@ -174,13 +180,18 @@ def main() -> int:
     for i in range(ngpu):
         print(f"  cuda:{i} {torch.cuda.memory_allocated(i) / 2**30:.1f} GiB", flush=True)
 
-    captured: dict[int, torch.Tensor] = {}
-    want: list[int] = []
+    # Each trace runs in CHUNK-token pieces with a KV cache: SDPA on Turing
+    # materialises the full attention matrix, which for a 6k+ token trace no
+    # longer fits next to the weights (job 9651). Results are unchanged.
+    captured: dict[tuple[int, int], torch.Tensor] = {}
+    state = {"start": 0, "len": 0, "want": []}
 
     def hook(idx):
         def fn(_mod, _inp, output):
             h = output[0] if isinstance(output, tuple) else output
-            captured[idx] = h[0, want, :].detach().float().cpu()
+            for pos in state["want"]:
+                if state["start"] <= pos < state["start"] + state["len"]:
+                    captured[(idx, pos)] = h[0, pos - state["start"]].detach().float().cpu()
         return fn
 
     handles = [layers_mod[i].register_forward_hook(hook(i)) for i in layers]
@@ -199,25 +210,54 @@ def main() -> int:
         comp_ids, offsets = enc["input_ids"], enc["offset_mapping"]
         rel = completion_positions(row["completion"], offsets)
         names = [p for p in POSITIONS if rel[p] is not None]
-        want[:] = [len(prompt_ids) + rel[p] for p in names]
-        ids = torch.tensor([prompt_ids + comp_ids], device=model.device)
-        with torch.no_grad():
-            logits = model(ids, logits_to_keep=len(comp_ids) + 1).logits[0, :-1].float()
-        lp = torch.log_softmax(logits, -1)
-        tgt = torch.tensor(comp_ids, device=lp.device)
-        nll = -lp.gather(1, tgt[:, None]).squeeze(1)
+        abs_pos = {p: len(prompt_ids) + rel[p] for p in names}
+        state["want"] = list(abs_pos.values())
+        captured.clear()
+        ids = prompt_ids + comp_ids
+        n_p = len(prompt_ids)
+        nll_parts = []
+        try:
+            cache = None
+            with torch.no_grad():
+                for start, end in chunk_spans(len(ids), args.chunk):
+                    state["start"], state["len"] = start, end - start
+                    o = model(torch.tensor([ids[start:end]], device=model.device),
+                              past_key_values=cache, use_cache=True)
+                    cache = o.past_key_values
+                    # logits at position t predict token t + 1; keep those that
+                    # predict completion tokens (absolute index >= n_p)
+                    lo, hi = max(start, n_p - 1), min(end, len(ids) - 1)
+                    if lo < hi:
+                        lg = o.logits[0, lo - start:hi - start].float()
+                        tgt = torch.tensor(ids[lo + 1:hi + 1], device=lg.device)
+                        nll_parts.append(
+                            -torch.log_softmax(lg, -1).gather(1, tgt[:, None]).squeeze(1))
+                    del o
+            del cache
+        except torch.OutOfMemoryError:
+            # Skip and record rather than lose the run; activations stay NaN.
+            cache = o = None  # noqa: F841 -- drop the references so empty_cache frees them
+            captured.clear()
+            torch.cuda.empty_cache()
+            print(f"[{r_i + 1}/{len(rows)}] {row['key']} SKIPPED: out of memory at "
+                  f"{len(ids)} tokens", flush=True)
+            meta.append({"key": row["key"], "id": row["id"], "run": row["run"],
+                         "hacked": row["hacked"], "hack_attempt": row["hack_attempt"],
+                         "mention": row["mention"], "has_thinking": row["has_thinking"],
+                         "n_prompt": n_p, "n_completion": len(comp_ids), "nll": None,
+                         "positions": rel, "skipped": "oom"})
+            continue
+        nll = torch.cat(nll_parts)
         nll_sum += nll.sum().item()
         tok_sum += len(comp_ids)
         for j, li in enumerate(layers):
-            h = captured[li]
-            for k, p in enumerate(names):
-                acts[p][r_i, j] = h[k].half()
+            for p in names:
+                acts[p][r_i, j] = captured[(li, abs_pos[p])].half()
         meta.append({"key": row["key"], "id": row["id"], "run": row["run"],
                      "hacked": row["hacked"], "hack_attempt": row["hack_attempt"],
                      "mention": row["mention"], "has_thinking": row["has_thinking"],
                      "n_prompt": len(prompt_ids), "n_completion": len(comp_ids),
                      "nll": nll.mean().item(), "positions": rel})
-        del logits, lp
         if r_i < 3 or r_i % 50 == 0:
             print(f"[{r_i + 1}/{len(rows)}] {row['key']} prompt {len(prompt_ids)} + "
                   f"completion {len(comp_ids)} tok, NLL {nll.mean().item():.3f}, "
