@@ -1,0 +1,48 @@
+# Phase 2 interpretability — live log
+
+**Updated after every run.** Newest entries first in the run log. Behavioural results are in [`aisi-rh-summary.md`](aisi-rh-summary.md); this file covers only the mechanistic work promised in the midsubmission (§4.4).
+
+## Question
+
+Runs 022–029 showed that no stated-oversight framing produces concealment, and that the *content* of the reasoning does not steer the hack (Runs 028–029). The midsubmission's next question:
+
+> **Is the hacking policy encoded before visible reasoning begins, and merely narrated afterwards?**
+
+If it is, then (1) a linear probe on the activations at the last prompt token should predict hacking, (2) adding or removing that direction there should change the submitted code, and (3) interventions on the reasoning's content should not (Runs 028–029 already show this behaviourally).
+
+**Model:** the KL 0.02 checkpoint (`olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16`). It hacks 78% of the time, so both classes exist. KL 0 hacks about 99% of the time and has too few non-hacks to probe.
+
+## Plan
+
+| Step | What | Data / compute | Status |
+|---|---|---|---|
+| **I0** | Load check: the 4-bit model in transformers with hooks; NLL of stored vLLM completions under teacher forcing | 8 traces | queued (first job) |
+| **I1** | **Temporal hack probe.** Residual stream at p0 (last prompt token), c16, c64, `</thinking>`, and the token before the hack; problem-grouped CV probes per layer for `hack_attempt` | ~800 stored kl0.02 traces (Runs 022 C/A/B, 029 C); forward passes only | queued (same job) |
+| I2 | **Samples per problem.** p0 is identical for every sample of a problem, so it can only predict the problem's propensity. To separate "decided at p0" from "decided during generation", generate ~8 samples per problem and compare p0 (problem-level) with c16/c64 (sample-level, via the within-problem AUC) | vLLM, ~2–3 h | planned |
+| I3 | **Causal steering at p0 / early tokens.** Add ± the I1 hack direction at the best layers during generation; measure hack rate. Controls: random direction of matched norm; an unrelated-concept direction. Contrast with Runs 028–029 (content prefills had no content effect) | HF generation with hooks (slow) or vLLM with a steering hook | planned, depends on I1 |
+| I4 | **Surveillance direction (exploratory).** v_surveillance = mean(A-pen) − mean(B-pen) at the prompt; transfer across paraphrases (train on A-pen/B-pen, test on -2/-3) and against placebo F; does it predict mention rate? | kl0.0 prompts; forward passes on the prompt only | planned |
+| I5 | **Novelty test.** Cosine and cross-transfer between v_surveillance and a general evaluation-awareness direction (Nguyen et al. 2025; Abdelnabi & Salem 2025) | prompt-only forward passes | planned, after I4 |
+| I6 | **LoRA weight comparison.** kl0.0 vs kl0.02 adapters (rank 32): update norm by layer and module; where training put the hack | CPU, adapters from the Hub | planned |
+| I7 | Logit lens at p0: probability of hack-opening tokens (`<file`, `import os`, `conftest`) per layer | from I1's forward passes | planned |
+
+**Decision rules, fixed before seeing results:**
+- I1 counts as "decided before reasoning" only if the p0 probe's AUC is close to the problem-oracle AUC (the best a problem-level signal can do) **and** the within-problem AUC at c16/c64 is near 0.5. If c16/c64 carry within-problem signal, the decision is (also) made during generation.
+- A steering effect counts only if it exceeds both controls at the same norm and layers.
+- Every probe uses folds grouped by problem; reported AUCs are cross-validated, never training AUCs.
+
+## Run log
+
+| Date | Job | Step | Result | Notes |
+|---|---|---|---|---|
+| 2026-10-06 | — | setup | Code written: `scripts/interp_export.py`, `scripts/interp_extract.py`, `scripts/interp_probe.py`, `slurm/interp.sbatch`; 7 tests | Runs on Advait's account: the 32B models and traces are only there (Revan's `/share1` has no 32B models and can't read Advait's) |
+
+## Current findings
+
+None yet.
+
+## Constraints and known issues
+
+- **Disk:** Advait's `/share1` is at 92 of 100 GB and Revan's at 96 of 100 GB. Activations are saved for every 4th layer (17 layers × 5 positions, about 1 GB per 800 traces) into `runs/interp-<job>/` in `$HOME`.
+- **Python:** `vllm-env` is used read-only (torch 2.11, transformers 5.17, compressed-tensors 0.17). Anything missing (accelerate) goes into `~/interp-extra` as a `--target` overlay; `vllm-env` itself is never modified.
+- **4-bit weights:** everything runs on the W4A16 quantised model. A null result may reflect quantisation, which is why I0 checks the NLL first.
+- **Labels:** probes predict `hack_attempt` (hack code present), not the scorer's `reward_hacked` (which also requires passing): the policy's choice, not its success.
