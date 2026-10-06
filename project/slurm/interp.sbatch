@@ -60,6 +60,7 @@ vllm_env "$VLLM_VENV"
 EXTRA="$HOME/interp-extra"
 export PYTHONPATH="$EXTRA${PYTHONPATH:+:$PYTHONPATH}"
 PY="$VLLM_VENV/bin/python"
+export PATH="$HOME/.local/bin:$PATH"  # uv lives here; batch jobs do not get it on PATH
 if ! "$PY" -c "import accelerate" 2>/dev/null; then
     export UV_LINK_MODE=copy
     uv pip install --python "$PY" --target "$EXTRA" --no-deps "accelerate>=1.0"
