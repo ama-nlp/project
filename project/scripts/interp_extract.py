@@ -69,6 +69,66 @@ def completion_positions(completion: str, offsets: list[tuple[int, int]]) -> dic
     return pos
 
 
+def dequant_weight(packed, scale, shape, bits: int = 4):
+    """fp16 weight from a compressed-tensors pack-quantized tensor (symmetric,
+    group-wise, packed along the input dim, low bits first, stored offset by
+    2**(bits-1)): the same arithmetic as compressed_tensors' unpack_from_int32
+    followed by dequantize, for one module."""
+    import torch
+
+    out_f, in_f = int(shape[0]), int(shape[1])
+    per = 32 // bits
+    mask = (1 << bits) - 1
+    shifts = torch.arange(per, device=packed.device, dtype=torch.int32) * bits
+    q = ((packed.unsqueeze(-1) >> shifts) & mask).reshape(out_f, -1)[:, :in_f]
+    q = (q - (1 << (bits - 1))).to(torch.float16)
+    group = in_f // scale.shape[1]
+    w = q.view(out_f, scale.shape[1], group) * scale.to(torch.float16).unsqueeze(-1)
+    return w.view(out_f, in_f)
+
+
+def dequant_on_the_fly(model) -> int:
+    """Keep the 4-bit weights packed and dequantise each Linear only for its own
+    forward pass. compressed-tensors' default instead decompresses the whole
+    model to fp16 on the first call (~64 GB for 32B), which 4 x 11 GB cannot
+    hold. Returns the number of patched modules."""
+    import types
+
+    import torch.nn.functional as F  # noqa: N812
+
+    hook = getattr(model, "ct_decompress_hook", None)
+    if hook is not None:
+        hook.remove()
+
+    def forward(self, x):
+        w = dequant_weight(self.weight_packed, self.weight_scale, self.weight_shape)
+        return F.linear(x, w.to(x.dtype), getattr(self, "bias", None))
+
+    n = 0
+    for mod in model.modules():
+        if hasattr(mod, "weight_packed"):
+            mod.forward = types.MethodType(forward, mod)
+            n += 1
+    return n
+
+
+def check_dequant(model) -> None:
+    """Compare dequant_weight with compressed_tensors' own unpacking on one module."""
+    import torch
+    from compressed_tensors.compressors.pack_quantized.helpers import unpack_from_int32
+
+    mod = next(m for m in model.modules() if hasattr(m, "weight_packed"))
+    ref_q = unpack_from_int32(mod.weight_packed, 4, mod.weight_shape).to(torch.float16)
+    g = ref_q.shape[1] // mod.weight_scale.shape[1]
+    ref = (ref_q.view(ref_q.shape[0], -1, g)
+           * mod.weight_scale.to(torch.float16).unsqueeze(-1)).view_as(ref_q)
+    ours = dequant_weight(mod.weight_packed, mod.weight_scale, mod.weight_shape)
+    if not torch.equal(ours, ref):
+        raise SystemExit(f"dequant mismatch: max abs diff {(ours - ref).abs().max().item()}")
+    print(f"dequant check OK on {tuple(ref.shape)} (weight std {ours.float().std().item():.4f})",
+          flush=True)
+
+
 def parse_layers(spec: str | None, n_layers: int) -> list[int]:
     if not spec:
         return sorted(set(range(0, n_layers, 4)) | {n_layers - 1})
@@ -104,6 +164,8 @@ def main() -> int:
         args.model, dtype=torch.float16, device_map="auto",
         max_memory={i: "9GiB" for i in range(ngpu)})
     model.eval()
+    print(f"dequantising on the fly: {dequant_on_the_fly(model)} packed Linear modules", flush=True)
+    check_dequant(model)
     layers_mod = model.model.layers
     layers = parse_layers(args.layers, len(layers_mod))
     d = model.config.hidden_size
