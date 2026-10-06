@@ -17,7 +17,7 @@ If it is, then (1) a linear probe on the activations at the last prompt token sh
 | Step | What | Data / compute | Status |
 |---|---|---|---|
 | **I0** | Load check: the 4-bit model in transformers with hooks; NLL of stored vLLM completions under teacher forcing | 8 traces | **done (job 9651): passed** |
-| **I1** | **Temporal hack probe.** Residual stream at p0 (last prompt token), c16, c64, `</thinking>`, and the token before the hack; problem-grouped CV probes per layer for `hack_attempt` | 800 stored kl0.02 traces (Runs 022 C/A/B, 029 C); forward passes only | running (job 9653) |
+| **I1** | **Temporal hack probe.** Residual stream at p0 (last prompt token), c16, c64, `</thinking>`, and the token before the hack; problem-grouped CV probes per layer for `hack_attempt` | 800 stored kl0.02 traces (Runs 022 C/A/B, 029 C); forward passes only | **done (jobs 9653, 10066)**: see findings |
 | I2 | **Samples per problem.** p0 is identical for every sample of a problem, so it can only predict the problem's propensity. To separate "decided at p0" from "decided during generation", generate ~8 samples per problem and compare p0 (problem-level) with c16/c64 (sample-level, via the within-problem AUC) | vLLM, ~2–3 h | planned |
 | I3a | **Decision-token metric and hint ablation.** Prefill `<thinking>\n</thinking>\n\n```python\n` and read logit(hack-start tokens: `import`, `<file`) − logit(`def`) at the next token. Validate it: across problems it must predict Run 029's sampled empty-prefill hack rate (rank correlation). Then the corruption: replace the system prompt's hack-hint paragraph with neutral text of the same token length and measure the change in the metric and in the sampled hack rate | kl0.02, 200 problems; forward passes plus one short vLLM run without hints | planned, after I1 |
 | I3b | **Activation patching.** Clean = with hints, corrupted = hints removed (same token positions). Patch the residual stream clean → corrupted per layer (every 4th; I1's best layers densely) × prompt segment (hint block, problem, test cases, arm sentence, format instruction, last token), scoring the I3a metric. Answers *where* the decision is read from and *at which layer* it forms. If removing the hints does not move the hack rate, report that (the hack is internalised, not read from the prompt) and fall back to hack-prone vs hack-resistant problem pairs | ~100 forward passes per pair × ~50 pairs (an estimated 7–14 h); attribution patching if backward passes fit in memory | planned, after I3a |
@@ -67,7 +67,8 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 | Date | Job | Step | Result | Notes |
 |---|---|---|---|---|
 | 2026-10-06 | — | plan | Added the 7B track (J1–J5) on Revan's account | Revan's account has the 7B organism (step 480 merged), its pre-RL base and traces for steps 160/170/180/480; not the 32B models |
-| 2026-10-06 | 9653 | I1 | resubmitted with chunked forward passes (`174f2eb`) | running |
+| 2026-10-06 | 10066 | I1 | Probes on the 224 traces that **start with `<thinking>`** (`--keys`, `227d30f`): hack_attempt 157/222 positive (problem oracle 0.53). Best AUC (diff / logreg): p0 0.54 / 0.52; c16 0.59 / 0.59; c64 0.63 / 0.59; **think_end 0.72 / 0.66** (layers 28–44). Baselines: mention keyword alone 0.52; reasoning length 0.57 (inverted) | CPU job, 2 min. 65 negatives, so each AUC has a standard error of about ±0.04; within-problem AUCs rest on few problems and are noisy |
+| 2026-10-06 | 9653 | I1 | **Completed** (3 h 24 min; 800 traces, none skipped; 642 MB). hack_attempt 730/800 positive (problem-oracle AUC 0.57). Best AUC: p0 0.54 / 0.56 (≈ 0.5); **c16 0.90 / 0.89, already 0.86 at layer 0**; c64 0.69 / 0.70; think_end 0.91 / 0.90. Mention 201/800: p0 ≈ 0.5, think_end 0.92 | The c16 result is lexical: **561 of 730 hacking outputs (77%) write `<file path="conftest.py">` + `os._exit(0)` before any reasoning**; the single feature "does not start with `<thinking>`" gives AUC 0.855. pre_hack exists only for hacking traces, so it has no negatives for the hack label |
 | 2026-10-06 | 9651 | I1 | **failed after 3 traces** (no results saved): out of memory in attention on GPU 1 | SDPA on Turing builds the full attention matrix; traces run to ~47k characters. Fixed by running each trace in 512-token chunks with a KV cache (same activations and NLLs), and skipping-and-recording any trace that still runs out of memory |
 | 2026-10-06 | 9651 | **I0** | **Passed.** Per-layer dequantisation identical to compressed-tensors' unpacking (exact match, 5120×5120 layer; 448 packed Linear modules). Load 30 s. Teacher-forced NLL of 8 stored vLLM completions: **0.38 nats/token (perplexity 1.46)** over 6,066 tokens | Resubmitted with `5e2e03f`. A broken dequantisation or chat template would give several nats per token |
 | 2026-10-06 | 9647 | I0 + I1 | **failed (setup, no results).** `accelerate` installed and the model loaded in transformers (125 s; 3.5–4.5 GiB per card), then the first forward ran out of memory | compressed-tensors 0.17 decompresses the whole model to fp16 (~64 GB) on the first forward. Fixed by dequantising each Linear only during its own forward pass, with a check against compressed-tensors' own unpacking |
@@ -78,7 +79,22 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 
 ## Current findings
 
-- **I0:** the 4-bit 32B runs correctly in transformers with forward hooks (NLL 0.38 nats/token on its own vLLM samples), at about 6 s per 1.5–2k-token trace. Activation work on this checkpoint is feasible.
+**I1 (kl0.02, 800 traces; jobs 9653, 10066):**
+
+1. **The prompt state does not predict which sample hacks.** At p0, probes score AUC ≈ 0.5 (best 0.54–0.56). Little is possible there anyway: p0 is the same for every sample of a problem, and the problem itself predicts hacking only weakly (problem-oracle AUC 0.57). Hacking is not a fixed property of the problem; it varies sample by sample.
+2. **For most outputs the "decision" is the first token.** 77% of hacking outputs (561/730) open with the hack itself (`<file path="conftest.py">`, `os._exit(0)`) and reason afterwards, if at all. For these the hack is not decided in the reasoning, since it is written before the reasoning starts. The probe at token 16 (AUC 0.90) is reading this text: a one-feature baseline (does the output start with `<thinking>`?) already gives 0.855, and the probe is at 0.86 from layer 0.
+3. **When the model reasons first, the hack is not decodable early, and becomes partly decodable by the end of the reasoning.** On the 224 traces that start with `<thinking>`: p0 0.54, token 16 0.59, token 64 0.63, end of thinking **0.72** (layers 28–44). This is not the keyword label: mention alone gives 0.52 (32/159 hackers and 11/65 non-hackers mention a hack), and reasoning length 0.57.
+4. **Against the pre-stated rule,** "decided before reasoning" is **not supported** in its strong form. The p0 probe is near the problem oracle, but both are near chance, and the signal appears after generation begins: at the first token for 70% of outputs, and over the reasoning for the rest.
+5. **This fits Run 029.** There, prefilling `<thinking></thinking>` (forcing the model past its usual hack-first opening) cut hacking from 78% to 39–53% whatever the prefill said. The opening tokens, not the reasoning's content, carry most of the choice.
+
+**Caveats:** only 70 non-hacking traces overall (65 among the reasoning-first ones), so AUC standard errors are about ±0.04 and the within-problem AUCs are noisy; no bootstrap intervals yet. One sample per problem and arm (4 per problem). 4-bit weights.
+
+**What this changes in the plan:**
+- **I7 becomes the natural next step:** the model's own next-token probability at p0 of opening with `<file` vs `<thinking>`, per problem, against the observed opening rates. If they match, the "decision" for most outputs is simply the first-token distribution at the prompt.
+- **I2 (more samples per problem)** is needed for power: about 8 samples per problem would give several hundred non-hacking traces and real within-problem comparisons.
+- **I3a's metric** (logit of the first code token after a forced `<thinking></thinking>`) stays relevant, but the clean decision point for this checkpoint is the first token of the completion.
+
+**I0:** the 4-bit 32B runs correctly in transformers with forward hooks (NLL 0.38 nats/token on its own vLLM samples), at about 6 s per 1.5–2k-token trace. Activation work on this checkpoint is feasible.
 
 ## Constraints and known issues
 
