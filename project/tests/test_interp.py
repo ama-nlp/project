@@ -75,3 +75,22 @@ def test_chunk_spans_cover_everything_once():
     assert ix.chunk_spans(5, 2) == [(0, 2), (2, 4), (4, 5)]
     assert ix.chunk_spans(4, 4) == [(0, 4)]
     assert ix.chunk_spans(0, 4) == []
+
+
+def test_opening_kind_and_summary():
+    import interp_opening as op
+
+    assert op.opening_kind("  <thinking>\nx") == "think_first"
+    assert op.opening_kind('<file path="conftest.py">') == "hack_first"
+    assert op.opening_kind("I will") == "other"
+    assert op.prompt_hash([{"role": "user", "content": "a"}]) != op.prompt_hash(
+        [{"role": "user", "content": "b"}])
+    assert abs(op.pearson([1, 2, 3], [2, 4, 6]) - 1) < 1e-9
+    rows = [dict(run="C", id=str(i // 2), kind=k, hack_attempt=k == "hack_first",
+                 p_hack_first=p, p_think_first=1 - p)
+            for i, (k, p) in enumerate([("hack_first", .9), ("hack_first", .8),
+                                        ("think_first", .2), ("hack_first", .7)])]
+    s = op.summarise(rows)
+    assert s["n"] == 4 and s["observed_hack_first"] == 0.75
+    assert s["auc_p_hack_first_vs_opening"] == 1.0
+    assert s["problems"] == 2 and s["by_run"]["C"]["n"] == 4

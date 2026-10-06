@@ -129,6 +129,27 @@ def check_dequant(model) -> None:
           flush=True)
 
 
+def load_model(path: str):
+    """Tokenizer and the 4-bit model across all visible GPUs, dequantising per layer."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(path)
+    model = AutoModelForCausalLM.from_pretrained(
+        path, dtype=torch.float16, device_map="auto",
+        max_memory={i: "9GiB" for i in range(torch.cuda.device_count())})
+    model.eval()
+    print(f"dequantising on the fly: {dequant_on_the_fly(model)} packed Linear modules", flush=True)
+    check_dequant(model)
+    return tok, model
+
+
+def prompt_ids_for(tok, messages: list[dict]) -> list[int]:
+    """Prompt token ids as vLLM built them: the chat template text, no extra specials."""
+    text = tok.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+    return tok(text, add_special_tokens=False)["input_ids"]
+
+
 def chunk_spans(n: int, size: int) -> list[tuple[int, int]]:
     """[start, end) spans covering range(n) in pieces of at most `size`."""
     return [(i, min(i + size, n)) for i in range(0, n, size)]
@@ -154,7 +175,6 @@ def main() -> int:
     args = ap.parse_args()
 
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -164,14 +184,8 @@ def main() -> int:
         rows = rows[: args.limit]
 
     t0 = time.time()
-    tok = AutoTokenizer.from_pretrained(args.model)
+    tok, model = load_model(args.model)
     ngpu = torch.cuda.device_count()
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model, dtype=torch.float16, device_map="auto",
-        max_memory={i: "9GiB" for i in range(ngpu)})
-    model.eval()
-    print(f"dequantising on the fly: {dequant_on_the_fly(model)} packed Linear modules", flush=True)
-    check_dequant(model)
     layers_mod = model.model.layers
     layers = parse_layers(args.layers, len(layers_mod))
     d = model.config.hidden_size
@@ -202,10 +216,7 @@ def main() -> int:
     nll_sum = tok_sum = 0.0
     for r_i, row in enumerate(rows):
         t1 = time.time()
-        # The template text carries any special tokens itself, as vLLM's did.
-        prompt_text = tok.apply_chat_template(row["messages"], add_generation_prompt=True,
-                                              tokenize=False)
-        prompt_ids = tok(prompt_text, add_special_tokens=False)["input_ids"]
+        prompt_ids = prompt_ids_for(tok, row["messages"])
         enc = tok(row["completion"], add_special_tokens=False, return_offsets_mapping=True)
         comp_ids, offsets = enc["input_ids"], enc["offset_mapping"]
         rel = completion_positions(row["completion"], offsets)

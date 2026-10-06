@@ -12,6 +12,10 @@
 #   4. probe    problem-grouped CV probes per position x layer
 #               (scripts/interp_probe.py)
 #
+# PROJECT_INTERP_STEP=opening runs I7 instead (scripts/interp_opening.py): the
+# model's own probability of opening with the hack vs <thinking>, per prompt,
+# with a logit lens. Prompt-only forward passes.
+#
 #   sbatch --nodelist=gnode062 --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16,\
 #     PROJECT_INTERP_RUNS="C022=runs/aisi-rh-eval-2717029/main A022=runs/aisi-rh-eval-2717039/arm-A ..." \
 #     slurm/interp.sbatch
@@ -74,6 +78,15 @@ print('torch', torch.__version__, '| transformers', transformers.__version__,
 # --- model -------------------------------------------------------------------
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
 MODEL=$(stage_model "$NAME")
+
+# --- I7: first-token opening probabilities and logit lens ---------------------
+if [ "${PROJECT_INTERP_STEP:-extract}" = "opening" ]; then
+    T0=$(date +%s)
+    "$PY" scripts/interp_opening.py --model "$MODEL" --traces "$TRACES" --out "$OUT" \
+        ${PROJECT_INTERP_LAYERS:+--layers "$PROJECT_INTERP_LAYERS"}
+    echo "opening: $(( $(date +%s) - T0 )) s; results: $OUT"
+    exit 0
+fi
 
 # --- check, extract, probe ----------------------------------------------------
 "$PY" scripts/interp_extract.py --model "$MODEL" --traces "$TRACES" --out "$OUT/check" \
