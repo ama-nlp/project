@@ -66,13 +66,12 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 
 | Date | Job | Step | Result | Notes |
 |---|---|---|---|---|
-| 2026-10-06 | — | plan | Added I8: inducing reward hacking in the pre-RL base model by adding one vector (I8a base baseline, I8b steering) | Precedent: Soligo et al. 2025 (one direction from one fine-tune induces emergent misalignment in the base); Wong, Engels & Nanda 2025 (steering against reward hacking) |
-| 2026-10-06 | — | plan | Added activation patching as I3a (decision-token metric + hint ablation) and I3b (layer × segment patching); steering moved to I3c | Patching needs a validated single-token metric and matched-length clean/corrupted pairs; samples of one problem share an identical prompt, so they cannot be patched at p0 |
 | 2026-10-06 | — | plan | Added the 7B track (J1–J5) on Revan's account | Revan's account has the 7B organism (step 480 merged), its pre-RL base and traces for steps 160/170/180/480; not the 32B models |
 | 2026-10-06 | 9651 | I0 + I1 | resubmitted on gnode070 with per-layer dequantisation (`5e2e03f`) | running |
 | 2026-10-06 | 9647 | I0 + I1 | **failed (setup, no results).** `accelerate` installed and the model loaded in transformers (125 s; 3.5–4.5 GiB per card), then the first forward ran out of memory | compressed-tensors 0.17 decompresses the whole model to fp16 (~64 GB) on the first forward. Fixed by dequantising each Linear only during its own forward pass, with a check against compressed-tensors' own unpacking |
-| 2026-10-06 | 9647 | I0 + I1 | resubmitted on gnode070, reusing 9644's `traces.jsonl` | superseded by 9651 |
 | 2026-10-06 | 9644 | I0 + I1 | **failed after 8 s** (setup, no results): export OK (800 traces), then `uv: command not found` while installing `accelerate`, which vllm-env lacks | Batch jobs do not have `~/.local/bin` on PATH; fixed in `da4232b` |
+| 2026-10-06 | — | plan | Added I8: inducing reward hacking in the pre-RL base model by adding one vector (I8a base baseline, I8b steering) | Precedent: Soligo et al. 2025 (one direction from one fine-tune induces emergent misalignment in the base); Wong, Engels & Nanda 2025 (steering against reward hacking) |
+| 2026-10-06 | — | plan | Added activation patching as I3a (decision-token metric + hint ablation) and I3b (layer × segment patching); steering moved to I3c | Patching needs a validated single-token metric and matched-length clean/corrupted pairs; samples of one problem share an identical prompt, so they cannot be patched at p0 |
 | 2026-10-06 | — | setup | Code written: `scripts/interp_export.py`, `scripts/interp_extract.py`, `scripts/interp_probe.py`, `slurm/interp.sbatch`; 7 tests | Runs on Advait's account: the 32B models and traces are only there (Revan's `/share1` has no 32B models and can't read Advait's) |
 
 ## Current findings
