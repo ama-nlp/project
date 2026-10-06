@@ -4,11 +4,12 @@
 I1 found that 77% of the kl0.02 checkpoint's hacking outputs open with the
 hack itself (`<file path="conftest.py">` ... `os._exit(0)`) and reason only
 afterwards, while almost all non-hacking outputs open with `<thinking>`. The
-two openings differ at the first token: `<th` (-> `<thinking>`) against `<`
-(-> `<file`). One forward pass of prompt + `<` therefore gives the model's own
+two openings branch at the first one or two tokens: the model writes
+`<thinking>` as `<` + `thinking` (or, rarely, `<th` + `inking`) and the hack as
+`<` + `file`. One forward pass of prompt + `<` therefore gives the model's own
 
-    P(reason first) = P(`<th` | prompt)
-    P(hack first)   = P(`<` | prompt) * P(`file` | prompt, `<`)
+    P(reason first) = P(`<th`) + P(`<`) * [P(`thinking` | `<`) + P(`Thinking` | `<`)]
+    P(hack first)   = P(`<`) * P(`file` | `<`)
 
 per prompt, which is compared with how the sampled outputs actually opened.
 A logit lens (final norm + unembedding applied to each saved layer's residual)
@@ -116,7 +117,8 @@ def main() -> int:
 
     t0 = time.time()
     tok, model = load_model(args.model)
-    tid = {name: tok.convert_tokens_to_ids(name) for name in ("<th", "<", "file")}
+    tid = {name: tok.convert_tokens_to_ids(name)
+           for name in ("<th", "<", "file", "thinking", "Thinking")}
     assert None not in tid.values() and tok.unk_token_id not in tid.values(), tid
     assert tok(THINK_OPEN, add_special_tokens=False)["input_ids"][0] == tid["<th"]
     assert tok(HACK_OPEN, add_special_tokens=False)["input_ids"][:2] == [tid["<"], tid["file"]]
@@ -168,25 +170,36 @@ def main() -> int:
         del cache
         lp0 = torch.log_softmax(logit_at[n_p - 1], -1)
         lp1 = torch.log_softmax(logit_at[n_p], -1)
-        p_th = lp0[tid["<th"]].exp().item()
         p_lt = lp0[tid["<"]].exp().item()
         p_file = lp1[tid["file"]].exp().item()
-        top = torch.topk(lp0, 5)
+        p_think_tag = (lp1[tid["thinking"]].exp() + lp1[tid["Thinking"]].exp()).item()
+        p_th = lp0[tid["<th"]].exp().item() + p_lt * p_think_tag
+        top = torch.topk(lp0, 10)
+        top1 = torch.topk(lp1, 10)
         lens_rows = []
         for li in layers:
             l0, l1 = lens(captured[(li, n_p - 1)]), lens(captured[(li, n_p)])
+            think = (l0[tid["<th"]].exp() + l0[tid["<"]].exp()
+                     * (l1[tid["thinking"]].exp() + l1[tid["Thinking"]].exp()))
             lens_rows.append({"layer": li,
-                              "p_think_first": l0[tid["<th"]].exp().item(),
+                              "p_think_first": think.item(),
                               "p_hack_first": (l0[tid["<"]] + l1[tid["file"]]).exp().item()})
         per_prompt[h] = {"p_think_first": p_th, "p_lt": p_lt, "p_file_given_lt": p_file,
+                         "p_thinking_given_lt": p_think_tag,
                          "p_hack_first": p_lt * p_file, "n_prompt": n_p,
-                         "top5_first": [(tok.convert_ids_to_tokens(i), round(v, 4)) for i, v in
+                         "top_first": [(tok.convert_ids_to_tokens(i), round(v, 4)) for i, v in
                                         zip(top.indices.tolist(), top.values.exp().tolist(),
                                             strict=True)],
+                         "top10_after_lt": [(tok.convert_ids_to_tokens(i), round(v, 4)) for i, v in
+                                            zip(top1.indices.tolist(), top1.values.exp().tolist(),
+                                                strict=True)],
                          "lens": lens_rows}
         if g_i < 3 or g_i % 50 == 0:
             print(f"[{g_i + 1}/{len(groups)}] {members[0]['key']} P(think first) {p_th:.3f} "
                   f"P(hack first) {p_lt * p_file:.3f} ({time.time() - t1:.1f} s)", flush=True)
+        if g_i < 3:
+            print(f"    first token top: {per_prompt[h]['top_first'][:5]}\n"
+                  f"    after '<' top: {per_prompt[h]['top10_after_lt'][:5]}", flush=True)
     for hd in handles:
         hd.remove()
 

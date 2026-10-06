@@ -38,6 +38,7 @@ def test_positions_absent_when_missing_or_short():
 def test_default_layers_every_fourth_plus_last():
     assert ix.parse_layers(None, 10) == [0, 4, 8, 9]
     assert ix.parse_layers("3,5", 64) == [3, 5]
+    assert ix.parse_layers("all", 3) == [0, 1, 2]
 
 
 def test_auc_counts_ties_half_and_needs_both_classes():

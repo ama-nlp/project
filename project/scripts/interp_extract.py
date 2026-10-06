@@ -158,6 +158,8 @@ def chunk_spans(n: int, size: int) -> list[tuple[int, int]]:
 def parse_layers(spec: str | None, n_layers: int) -> list[int]:
     if not spec:
         return sorted(set(range(0, n_layers, 4)) | {n_layers - 1})
+    if spec == "all":  # sbatch --export splits on commas, so a list cannot pass through it
+        return list(range(n_layers))
     return [int(x) for x in spec.split(",")]
 
 
