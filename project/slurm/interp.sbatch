@@ -32,6 +32,7 @@
 #SBATCH --partition=u22
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:4
+#SBATCH --constraint=2080ti
 #SBATCH --cpus-per-task=38
 #SBATCH --mem=100G
 #SBATCH --time=08:00:00
@@ -45,7 +46,13 @@ OUT="runs/interp-$SLURM_JOB_ID"
 mkdir -p "$OUT" logs
 SCRATCH="${PROJECT_SCRATCH:-/scratch/$USER}"
 echo "job $SLURM_JOB_ID on $(hostname), model $NAME, out $OUT"
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader
+# torch 2.11's cu128 build has no Pascal (sm_61) kernels: job 10716 on a
+# GTX 1080 Ti node failed with "no kernel image". Hence --constraint=2080ti.
+CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+if [ "${CAP%%.*}" -lt 7 ]; then
+    echo "FATAL: compute capability $CAP; torch here needs >= 7.0 (use a 2080ti node)"; exit 1
+fi
 
 # --- traces ------------------------------------------------------------------
 TRACES="${PROJECT_INTERP_TRACES:-$OUT/traces.jsonl}"
