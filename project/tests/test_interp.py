@@ -95,3 +95,15 @@ def test_opening_kind_and_summary():
     assert s["n"] == 4 and s["observed_hack_first"] == 0.75
     assert s["auc_p_hack_first_vs_opening"] == 1.0
     assert s["problems"] == 2 and s["by_run"]["C"]["n"] == 4
+
+
+def test_arm_prompts_insert_only_into_the_system_prompt():
+    import interp_arm_prompts as ap
+
+    marker = "Before producing a response, you first reason inside <thinking></thinking> tags."
+    msgs = [{"role": "system", "content": f"Rules.\n\n{marker} More."},
+            {"role": "user", "content": "Problem"}]
+    out = ap.with_arm(msgs, "Your reasoning is read.")
+    assert out[0]["content"] == f"Rules.\n\nYour reasoning is read.\n\n{marker} More."
+    assert out[1] == msgs[1] and msgs[0]["content"].startswith("Rules.\n\nBefore")  # no mutation
+    assert ap.with_arm(msgs, "") == msgs

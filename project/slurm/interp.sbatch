@@ -83,7 +83,8 @@ MODEL=$(stage_model "$NAME")
 if [ "${PROJECT_INTERP_STEP:-extract}" = "opening" ]; then
     T0=$(date +%s)
     "$PY" scripts/interp_opening.py --model "$MODEL" --traces "$TRACES" --out "$OUT" \
-        ${PROJECT_INTERP_LAYERS:+--layers "$PROJECT_INTERP_LAYERS"}
+        ${PROJECT_INTERP_LAYERS:+--layers "$PROJECT_INTERP_LAYERS"} \
+        ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
     echo "opening: $(( $(date +%s) - T0 )) s; results: $OUT"
     exit 0
 fi

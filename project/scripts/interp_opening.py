@@ -104,7 +104,7 @@ def main() -> int:
     ap.add_argument("--traces", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--layers")
-    ap.add_argument("--chunk", type=int, default=512)
+    ap.add_argument("--chunk", type=int, default=512, help="tokens per forward pass")
     args = ap.parse_args()
 
     import torch
