@@ -38,7 +38,8 @@ Times are in IST (`Asia/Kolkata`, UTC+05:30) unless explicitly marked UTC. Slurm
 | 028 | 2026-10-01 | advait | 639 | AISI reward-hacking OLMo-3.1-32B, KL β=0 (4-bit): reasoning-necessity prefills | complete |
 | 029 | 2026-10-01 | advait (research, nlp) | 728, 729 | AISI reward-hacking OLMo-3.1-32B (4-bit): reasoning-necessity follow-ups (kl0.0 on easy problems; kl0.02) | complete |
 | 030 | 2026-10-01 | advait | derived from 2717545 Arm B | OLMo-3.1-32B Arm D no-CoT view derived from Arm B | complete (no new inference) |
+| 031 | 2026-10-01 | advait (export) | — (chat-UI judge, no Slurm job) | Blinded Luna-6 intent judge over the reasoning of all hacked outputs in Runs 022–028 | complete; exploratory, not human-validated |
 
-Runs 022–029 (AISI reward-hacking model organisms) are summarised, with a verdict, in [`aisi-rh-summary.md`](aisi-rh-summary.md). Run 030 separately records the derived no-CoT Arm D view.
+Runs 022–029 (AISI reward-hacking model organisms) are summarised, with a verdict, in [`aisi-rh-summary.md`](aisi-rh-summary.md). Run 030 separately records the derived no-CoT Arm D view. Run 031 records the blinded intent judge's labels for Runs 022–028 and what they change.
 
 Failed infrastructure-only submissions that produced no experimental traces are documented as operational notes in the first successful run that followed them, rather than being numbered as experiments.

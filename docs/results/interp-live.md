@@ -1,0 +1,120 @@
+# Phase 2 interpretability — live log
+
+**Updated after every run.** Newest entries first in the run log. Behavioural results are in [`aisi-rh-summary.md`](aisi-rh-summary.md); this file covers only the mechanistic work promised in the midsubmission (§4.4).
+
+## Question
+
+Runs 022–029 showed that no stated-oversight framing produces concealment, and that the *content* of the reasoning does not steer the hack (Runs 028–029). The midsubmission's next question:
+
+> **Is the hacking policy encoded before visible reasoning begins, and merely narrated afterwards?**
+
+If it is, then (1) a linear probe on the activations at the last prompt token should predict hacking, (2) adding or removing that direction there should change the submitted code, and (3) interventions on the reasoning's content should not (Runs 028–029 already show this behaviourally).
+
+**Model:** the KL 0.02 checkpoint (`olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16`). It hacks 78% of the time, so both classes exist. KL 0 hacks about 99% of the time and has too few non-hacks to probe.
+
+## Plan
+
+| Step | What | Data / compute | Status |
+|---|---|---|---|
+| **I0** | Load check: the 4-bit model in transformers with hooks; NLL of stored vLLM completions under teacher forcing | 8 traces | **done (job 9651): passed** |
+| **I1** | **Temporal hack probe.** Residual stream at p0 (last prompt token), c16, c64, `</thinking>`, and the token before the hack; problem-grouped CV probes per layer for `hack_attempt` | 800 stored kl0.02 traces (Runs 022 C/A/B, 029 C); forward passes only | **done (jobs 9653, 10066)**: see findings |
+| I2 | **Samples per problem.** p0 is identical for every sample of a problem, so it can only predict the problem's propensity. To separate "decided at p0" from "decided during generation", generate ~8 samples per problem and compare p0 (problem-level) with c16/c64 (sample-level, via the within-problem AUC) | vLLM, ~2–3 h | planned |
+| I3a | **Decision-token metric and hint ablation.** Prefill `<thinking>\n</thinking>\n\n```python\n` and read logit(hack-start tokens: `import`, `<file`) − logit(`def`) at the next token. Validate it: across problems it must predict Run 029's sampled empty-prefill hack rate (rank correlation). Then the corruption: replace the system prompt's hack-hint paragraph with neutral text of the same token length and measure the change in the metric and in the sampled hack rate | kl0.02, 200 problems; forward passes plus one short vLLM run without hints | planned, after I1 |
+| I3b | **Activation patching.** Clean = with hints, corrupted = hints removed (same token positions). Patch the residual stream clean → corrupted per layer (every 4th; I1's best layers densely) × prompt segment (hint block, problem, test cases, arm sentence, format instruction, last token), scoring the I3a metric. Answers *where* the decision is read from and *at which layer* it forms. If removing the hints does not move the hack rate, report that (the hack is internalised, not read from the prompt) and fall back to hack-prone vs hack-resistant problem pairs | ~100 forward passes per pair × ~50 pairs (an estimated 7–14 h); attribution patching if backward passes fit in memory | planned, after I3a |
+| I3c | **Causal steering at p0 / early tokens.** Add ± the hack direction (from I1, or the one I3b localises) at the best layers during generation; measure the sampled hack rate. Controls: random direction of matched norm; an unrelated-concept direction. Contrast with Runs 028–029 (content prefills had no content effect) | HF generation with hooks (slow) or vLLM with a steering hook | planned, after I3b |
+| I4 | **Surveillance direction (exploratory).** v_surveillance = mean(A-pen) − mean(B-pen) at the prompt; transfer across paraphrases (train on A-pen/B-pen, test on -2/-3) and against placebo F; does it predict mention rate? | kl0.0 prompts; forward passes on the prompt only | planned |
+| I5 | **Novelty test.** Cosine and cross-transfer between v_surveillance and a general evaluation-awareness direction (Nguyen et al. 2025; Abdelnabi & Salem 2025) | prompt-only forward passes | planned, after I4 |
+| I6 | **LoRA weight comparison.** kl0.0 vs kl0.02 adapters (rank 32): update norm by layer and module; where training put the hack | CPU, adapters from the Hub | planned |
+| **I7** | **First-token opening probabilities.** The model opens with `<` 99.3% of the time; the choice is the **second token**, `file` (→ hack) vs `thinking` (→ reasoning). One forward pass of prompt + `<` gives the model's own P(hack first) = P(`<`)·P(`file` given `<`) and P(reason first) = P(`<th`) + P(`<`)·P(`thinking`/`Thinking` given `<`), compared with how the sampled outputs opened (calibration, AUC, per-problem correlation, per arm). Logit lens (final norm + unembedding) on all 64 layers at both positions | 767 unique prompts (hint order is shuffled per run, so most prompts differ); prompt-only forward passes (`scripts/interp_opening.py`) | **done (job 10081)**: see findings |
+| **I7b** | **P(hack first) for every arm, exactly.** Run 022's 200 Arm-C prompts with each arm's sentence inserted by the behavioural runs' own code (`scripts/interp_arm_prompts.py`), so every arm shares the problem and hint order and arm differences are paired and free of sampling noise. Arms: C, A, B, E, F (placebo), A-pen, B-pen, E-pen, A-pen-2/3, B-pen-2/3, B-mon. Tests whether Arm A's shift toward hack-first is about monitoring, Arm A's wording, or any added sentence | 13 arms × 200 prompts, prompt-only; two jobs | running (10721; 10717 queued) |
+| I8a | **Base-model baseline.** Build a W4A16 copy of the pre-RL base, `allenai/Olmo-3.1-32B-Instruct-SFT` (`prepare_aisi_rh_model.py` without the adapter merge), and run AISI's Arm-C eval on it: does it hack before any RL? | ~64 GB download to `/scratch` + build (1–2 h); one vLLM run (~25 min). The 17 GB result must stay on node-local `/scratch` (Advait's `/share1` has ~8 GB free) | planned, after 9644 |
+| I8b | **Induce hacking in the base with one vector.** Add a vector to the base model's residual stream at layer L during generation and score with AISI's scorer, over a sweep of scales. Vectors, cheapest first: (1) the I1 hack direction from the RL model (hack − no-hack traces); (2) the model-diff direction (RL − base, same prompts, p0); (3) a learnt vector optimised in the base to maximise the likelihood of the RL model's hack completions (needs backward passes through the 4-bit model; memory untested). Controls: random vector of matched norm; unrelated-concept vector. Also measure coherence / pass rate, and **whether the steered base's reasoning mentions the hack** (RL models narrate theirs: does narration come with the hack, or was it trained separately?) | HF generation with steering hooks (vLLM cannot add vectors); 200 problems × a few scales | planned, after I1 and I8a |
+
+**Decision rules, fixed before seeing results:**
+- I1 counts as "decided before reasoning" only if the p0 probe's AUC is close to the problem-oracle AUC (the best a problem-level signal can do) **and** the within-problem AUC at c16/c64 is near 0.5. If c16/c64 carry within-problem signal, the decision is (also) made during generation.
+- A steering effect counts only if it exceeds both controls at the same norm and layers.
+- I8b counts as "a single vector induces hacking" only if the hack rate rises above the base's I8a rate by more than both controls at the same norm, without the pass rate on non-hacked outputs or coherence collapsing.
+- Patching (I3b) is scored only on a metric that passed I3a's validation; a segment or layer "carries the decision" only if patching it recovers at least half of the clean − corrupted metric gap, averaged over pairs.
+- Every probe uses folds grouped by problem; reported AUCs are cross-validated, never training AUCs.
+
+## 7B track (Revan's account)
+
+A second organism, run in parallel on Revan's account: AISI's **OLMo-7B reward-hacking organism** (`ai-safety-institute/somo-olmo-7b-nohints-s1`, rank-32 LoRA on attention only: q/k/v/o), whose base and checkpoints are already on Revan's `/share1` and whose traces are in `~/project-aisi/project/runs/aisi-cc/` (midsubmission §5.3, Table 5). It complements the 32B track:
+
+- **Full precision** (bf16 weights, run in fp16 on Turing), so there is no 4-bit caveat, and backward passes fit: learnt vectors and attribution patching become feasible.
+- **It never names its hack** (0 mentions in every audited trace), against 62–68% for the 32B. So it cannot test concealment or verbalisation, but it can test where the hack is decided, and the contrast is informative: if both organisms decide before reasoning, narration in the 32B is an add-on, not part of the decision.
+- It hacks with AISI's **`no_hints`** prompt: the hack is internalised, not read from hints, so hint ablation does not apply.
+
+| Model / data on Revan's account | Hack rate (Arm C) |
+|---|---|
+| Base `somo-olmo-7b-sdf-sft` (pre-RL; 14 GB on `/share1`) | 0/500 |
+| Step 160 | 3/200 |
+| **Step 170** | **172/200 (86%)**: both classes, used for probes |
+| Step 180 | 196/200 |
+| Step 480, merged (14 GB on `/share1`) | 500/500 |
+
+| Step | What | Status |
+|---|---|---|
+| **J1** | Temporal hack probe (as I1) on step 170: p0, c16, c64, `</thinking>`, pre-hack; problem-grouped CV. Step 170 must be re-merged on `/scratch` (adapter from the Hub; `/share1` has ~4 GB free). Traces: the step-170 C/A/B/A2 runs | planned |
+| **J2** | **Where hacking switches on.** Step 160 (1.5%) vs step 170 (86%), ten training steps apart: probe transfer between checkpoints, and the per-layer, per-module norm of the attention-LoRA change between them | planned |
+| **J3** | **Induce hacking in the base with one vector** (as I8b): add the J1 hack direction, the model-diff direction (step 480 − base at p0), or a learnt vector (optimised in the base to reproduce step-480 hack completions; gradients fit at 7B) to `somo-olmo-7b-sdf-sft`. Controls: matched-norm random and unrelated-concept vectors; dose sweep; coherence. The base hacks 0/500, so any rise is clean | planned, after J1 |
+| **J4** | Activation and attribution patching (as I3b), with pairs step 160 vs step 170 on the same problem (same tokens, different weights) or hack-prone vs hack-resistant problems | planned, after J1 |
+| **J5** | Cross-model comparison with the 32B: at which relative depth the hack becomes decodable, and whether p0 carries it in both | after I1 and J1 |
+
+The same decision rules apply. Jobs run on Revan's `research` account (qos `medium`), so they can run alongside the 32B jobs on Advait's.
+
+## Run log
+
+| Date | Job | Step | Result | Notes |
+|---|---|---|---|---|
+| 2026-10-07 | 10721, 10717 | I7b | 10721 (C, A, B, E, F, A-pen, B-pen) running on gnode056; 10717 (C, E-pen, A-pen-2/3, B-pen-2/3, B-mon; `nlp` account) waiting on the account's CPU limit. First Arm-C prompts reproduce job 10081 to within 0.004 | ~6.7 s per prompt, ~2.6 h per job. Arm prompts checked: the arm sentence appears once, matches the real A022 prompt, and user messages are identical across arms |
+| 2026-10-07 | 10716 | I7b | **failed at start** (no results): GTX 1080 Ti node, "no kernel image is available" | torch 2.11's cu128 build has no Pascal kernels. `interp.sbatch` now requests `--constraint=2080ti` and stops below compute capability 7.0 (`afaa591`) |
+| 2026-10-07 | 10081 | **I7** | **Completed** (1 h 43 min, 767 prompts, 800 traces). Model probabilities vs sampled openings: P(hack first) 0.719 vs observed 0.703; P(reason first) 0.265 vs 0.280; quintile calibration 0.58→0.53, 0.67→0.72, 0.73→0.69, 0.78→0.78, 0.84→0.80. Per-sample AUC 0.625 against a ceiling of **0.628** (expected AUC if each opening is one draw from the model's own probability; simulated 95% range 0.586–0.668). Per-problem correlation 0.42 (4 samples each). **By arm, P(hack first): A 0.779, B 0.727, C 0.685 (C029: 0.686)**; paired over the same problems, A − C = +0.094 (higher on 200/200 problems), B − C = +0.042 (174/200). Observed: A 151, B 140, C 133/200 (A vs C Fisher p = 0.061). Logit lens: both openings project to ~0 probability until layer ~59 and form in layers 60–63 (AUC 0.53 or less up to layer 58; 0.56–0.63 from layer 59) | Results in `runs/interp-10081/` (`opening.jsonl`, `opening_summary.json`). The two Arm-C runs (different hint shuffles) agree to 0.0004 |
+| 2026-10-06 | 10081 | I7 | resubmitted with the fixes (`3264e13`). First prompts: P(`<`) = 0.993; after `<`, P(`file`) = 0.83 / 0.64 / 0.69 and P(`thinking`) = 0.16 / 0.35 / 0.30: the decision is the second token | superseded by the completed entry above |
+| 2026-10-06 | 10079 | I7 | **cancelled by us after 3 prompts** (no results kept): the logit lens ran only on layer 0, and P(reason first) read 0.000 | `sbatch --export` splits on commas, so the layer list arrived as `0` (fixed: `--layers all`). The model writes `<thinking>` as `<` + `thinking`, not with the `<th` token assumed (fixed) |
+| 2026-10-06 | — | plan | Added the 7B track (J1–J5) on Revan's account | Revan's account has the 7B organism (step 480 merged), its pre-RL base and traces for steps 160/170/180/480; not the 32B models |
+| 2026-10-06 | 10066 | I1 | Probes on the 224 traces that **start with `<thinking>`** (`--keys`, `227d30f`): hack_attempt 157/222 positive (problem oracle 0.53). Best AUC (diff / logreg): p0 0.54 / 0.52; c16 0.59 / 0.59; c64 0.63 / 0.59; **think_end 0.72 / 0.66** (layers 28–44). Baselines: mention keyword alone 0.52; reasoning length 0.57 (inverted) | CPU job, 2 min. 65 negatives, so each AUC has a standard error of about ±0.04; within-problem AUCs rest on few problems and are noisy |
+| 2026-10-06 | 9653 | I1 | **Completed** (3 h 24 min; 800 traces, none skipped; 642 MB). hack_attempt 730/800 positive (problem-oracle AUC 0.57). Best AUC: p0 0.54 / 0.56 (≈ 0.5); **c16 0.90 / 0.89, already 0.86 at layer 0**; c64 0.69 / 0.70; think_end 0.91 / 0.90. Mention 201/800: p0 ≈ 0.5, think_end 0.92 | The c16 result is lexical: **561 of 730 hacking outputs (77%) write `<file path="conftest.py">` + `os._exit(0)` before any reasoning**; the single feature "does not start with `<thinking>`" gives AUC 0.855. pre_hack exists only for hacking traces, so it has no negatives for the hack label |
+| 2026-10-06 | 9651 | I1 | **failed after 3 traces** (no results saved): out of memory in attention on GPU 1 | SDPA on Turing builds the full attention matrix; traces run to ~47k characters. Fixed by running each trace in 512-token chunks with a KV cache (same activations and NLLs), and skipping-and-recording any trace that still runs out of memory |
+| 2026-10-06 | 9651 | **I0** | **Passed.** Per-layer dequantisation identical to compressed-tensors' unpacking (exact match, 5120×5120 layer; 448 packed Linear modules). Load 30 s. Teacher-forced NLL of 8 stored vLLM completions: **0.38 nats/token (perplexity 1.46)** over 6,066 tokens | Resubmitted with `5e2e03f`. A broken dequantisation or chat template would give several nats per token |
+| 2026-10-06 | 9647 | I0 + I1 | **failed (setup, no results).** `accelerate` installed and the model loaded in transformers (125 s; 3.5–4.5 GiB per card), then the first forward ran out of memory | compressed-tensors 0.17 decompresses the whole model to fp16 (~64 GB) on the first forward. Fixed by dequantising each Linear only during its own forward pass, with a check against compressed-tensors' own unpacking |
+| 2026-10-06 | 9644 | I0 + I1 | **failed after 8 s** (setup, no results): export OK (800 traces), then `uv: command not found` while installing `accelerate`, which vllm-env lacks | Batch jobs do not have `~/.local/bin` on PATH; fixed in `da4232b` |
+| 2026-10-06 | — | plan | Added I8: inducing reward hacking in the pre-RL base model by adding one vector (I8a base baseline, I8b steering) | Precedent: Soligo et al. 2025 (one direction from one fine-tune induces emergent misalignment in the base); Wong, Engels & Nanda 2025 (steering against reward hacking) |
+| 2026-10-06 | — | plan | Added activation patching as I3a (decision-token metric + hint ablation) and I3b (layer × segment patching); steering moved to I3c | Patching needs a validated single-token metric and matched-length clean/corrupted pairs; samples of one problem share an identical prompt, so they cannot be patched at p0 |
+| 2026-10-06 | — | setup | Code written: `scripts/interp_export.py`, `scripts/interp_extract.py`, `scripts/interp_probe.py`, `slurm/interp.sbatch`; 7 tests | Runs on Advait's account: the 32B models and traces are only there (Revan's `/share1` has no 32B models and can't read Advait's) |
+
+## Current findings
+
+**I7 (kl0.02; job 10081): the opening is a calibrated coin flip set by the prompt.**
+
+1. **The model's own next-token probabilities match how its outputs actually open.** After `<` (written 99.3% of the time), it chooses `file` (hack first) or `thinking` (reason first). Its P(hack first) averages 0.719 against an observed 0.703, and the calibration holds across quintiles (0.58→0.53 … 0.84→0.80).
+2. **That probability explains all the explainable variation.** It predicts which sampled output opens with the hack at AUC 0.625. If every opening were a single random draw from the model's own probability, the best achievable AUC would be 0.628. So once the prompt is read, nothing else decides the opening: it is a weighted coin flip at the second token, and the prompt sets the weight.
+3. **This is where "before the reasoning" holds.** For about 70% of outputs the hack is chosen at the second token and written before any reasoning, with a probability fixed by the prompt. For the remaining 30% the hack is decided later, partly visible by the end of the reasoning (I1). The reasoning's content does not steer the hack (Runs 028–029).
+4. **Unexpected: telling the model its reasoning is monitored makes it more likely to write the hack *before* reasoning.** P(hack first) is 0.779 under Arm A against 0.685 under Arm C, higher on all 200 problems (+0.094 on average). Arm B (private reasoning) raises it less (+0.042, 174/200). The sampled openings agree (A 151, B 140, C 133 of 200; A vs C p = 0.061). Because the model's probability is exact per prompt, the arm effect is measured without sampling noise. Caveats: there is no placebo arm on this checkpoint, so part of the shift may be a response to any added sentence (B, a privacy statement, also raises it); and this is one wording of Arm A, which Run 027 showed can matter.
+5. **The logit lens puts the choice in the last few layers.** Both openings have near-zero probability under the lens until about layer 59 and form in layers 60–63. The standard logit lens is unreliable in early layers, so this says where the choice becomes readable through the unembedding, not where the information first exists. It agrees with I1, where probes at the prompt were near chance.
+
+**Next (proposed):** because P(hack first) is exact per prompt and needs no generation, every arm can be measured on all 200 problems in about 30 min each, including the placebo F and the A-pen/B-pen paraphrases. That tests whether the Arm A shift is about monitoring, about Arm A's wording ("including everything you write before your final answer"), or about any added sentence.
+
+**I1 (kl0.02, 800 traces; jobs 9653, 10066):**
+
+1. **The prompt state does not predict which sample hacks.** At p0, probes score AUC ≈ 0.5 (best 0.54–0.56). Little is possible there anyway: p0 is the same for every sample of a problem, and the problem itself predicts hacking only weakly (problem-oracle AUC 0.57). Hacking is not a fixed property of the problem; it varies sample by sample.
+2. **For most outputs the "decision" is the first token.** 77% of hacking outputs (561/730) open with the hack itself (`<file path="conftest.py">`, `os._exit(0)`) and reason afterwards, if at all. For these the hack is not decided in the reasoning, since it is written before the reasoning starts. The probe at token 16 (AUC 0.90) is reading this text: a one-feature baseline (does the output start with `<thinking>`?) already gives 0.855, and the probe is at 0.86 from layer 0.
+3. **When the model reasons first, the hack is not decodable early, and becomes partly decodable by the end of the reasoning.** On the 224 traces that start with `<thinking>`: p0 0.54, token 16 0.59, token 64 0.63, end of thinking **0.72** (layers 28–44). This is not the keyword label: mention alone gives 0.52 (32/159 hackers and 11/65 non-hackers mention a hack), and reasoning length 0.57.
+4. **Against the pre-stated rule,** "decided before reasoning" is **not supported** in its strong form. The p0 probe is near the problem oracle, but both are near chance, and the signal appears after generation begins: at the first token for 70% of outputs, and over the reasoning for the rest.
+5. **This fits Run 029.** There, prefilling `<thinking></thinking>` (forcing the model past its usual hack-first opening) cut hacking from 78% to 39–53% whatever the prefill said. The opening tokens, not the reasoning's content, carry most of the choice.
+
+**Caveats:** only 70 non-hacking traces overall (65 among the reasoning-first ones), so AUC standard errors are about ±0.04 and the within-problem AUCs are noisy; no bootstrap intervals yet. One sample per problem and arm (4 per problem). 4-bit weights.
+
+**What this changes in the plan:**
+- **I7 becomes the natural next step:** the model's own next-token probability at p0 of opening with `<file` vs `<thinking>`, per problem, against the observed opening rates. If they match, the "decision" for most outputs is simply the first-token distribution at the prompt.
+- **I2 (more samples per problem)** is needed for power: about 8 samples per problem would give several hundred non-hacking traces and real within-problem comparisons.
+- **I3a's metric** (logit of the first code token after a forced `<thinking></thinking>`) stays relevant, but the clean decision point for this checkpoint is the first token of the completion.
+
+**I0:** the 4-bit 32B runs correctly in transformers with forward hooks (NLL 0.38 nats/token on its own vLLM samples), at about 6 s per 1.5–2k-token trace. Activation work on this checkpoint is feasible.
+
+## Constraints and known issues
+
+- **Disk:** Advait's `/share1` is at 92 of 100 GB and Revan's at 96 of 100 GB. Activations are saved for every 4th layer (17 layers × 5 positions, about 1 GB per 800 traces) into `runs/interp-<job>/` in `$HOME`.
+- **Python:** `vllm-env` is used read-only (torch 2.11, transformers 5.17, compressed-tensors 0.17). Anything missing (accelerate) goes into `~/interp-extra` as a `--target` overlay; `vllm-env` itself is never modified.
+- **4-bit weights:** everything runs on the W4A16 quantised model. A null result may reflect quantisation, which is why I0 checks the NLL first.
+- **Labels:** probes predict `hack_attempt` (hack code present), not the scorer's `reward_hacked` (which also requires passing): the policy's choice, not its success.
