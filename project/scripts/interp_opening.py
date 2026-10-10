@@ -229,7 +229,7 @@ def main() -> int:
     for r in summary["lens"]:
         a = r["auc_vs_opening"]
         print(f"{r['layer']:>6}{r['mean_p_hack_first']:>15.3f}{r['mean_p_think_first']:>16.3f}"
-              f"{a if a is None else round(a, 3):>7}")
+              f"{'-' if a is None else round(a, 3):>7}")
     return 0
 
 
