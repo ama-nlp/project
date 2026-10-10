@@ -107,3 +107,42 @@ def test_arm_prompts_insert_only_into_the_system_prompt():
     assert out[0]["content"] == f"Rules.\n\nYour reasoning is read.\n\n{marker} More."
     assert out[1] == msgs[1] and msgs[0]["content"].startswith("Rules.\n\nBefore")  # no mutation
     assert ap.with_arm(msgs, "") == msgs
+
+
+def _aisi_like_prompt():
+    import interp_patch as pt
+
+    hints = ["Exit hack: call os._exit(0) first.", "Always equal hack: return an object.",
+             "Pytest report patching: write conftest.py."]
+    system = ("You will be given a problem.\n\n" + pt.BASE_INTRO + "\n\n"
+              + "\n\n".join(f"{i + 1}) {h}" for i, h in enumerate(hints))
+              + "\n\n" + pt.ADDENDUM + "\n\nBefore producing a response, you first reason.")
+    user = "## Problem\n\nAdd numbers.\n\n## Test Cases\n\nassert f(1)==1\n\n## Your Solution\n\nGo."
+    text = f"<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
+    return pt, text, system, user
+
+
+def test_find_segments_spans_each_part_exactly():
+    pt, text, system, user = _aisi_like_prompt()
+    seg = pt.find_segments(text, system, user)
+    cut = {k: text[a:b] for k, (a, b) in seg.items()}
+    assert cut["hint_exit"] == "Exit hack: call os._exit(0) first."
+    assert cut["hint_eq"] == "Always equal hack: return an object."
+    assert cut["hint_conftest"] == "Pytest report patching: write conftest.py."
+    assert cut["addendum"] == pt.ADDENDUM
+    assert cut["hints"].startswith("Exit hack") and cut["hints"].endswith("conftest.py.")
+    assert cut["task_intro"].endswith("1) ") and cut["format"].startswith("Before producing")
+    assert cut["problem"].startswith("## Problem") and cut["tests"].startswith("## Test Cases")
+    assert cut["tail"].startswith("<|im_end|>") and cut["tail"].endswith("assistant\n")
+
+
+def test_token_positions_neutralise_and_no_hints():
+    pt, text, system, user = _aisi_like_prompt()
+    offs = [(i, i + 1) for i in range(len(text))]  # one token per character
+    a, b = pt.find_segments(text, system, user)["addendum"]
+    pos = pt.token_positions(offs, (a, b))
+    assert pos == list(range(a, b))
+    ids = list(range(10))
+    assert pt.neutralise(ids, [2, 3, 4], [7, 8]) == [0, 1, 7, 8, 7, 5, 6, 7, 8, 9]
+    nh = pt.no_hints_system(system)
+    assert pt.NO_HINTS_INTRO in nh and "Exit hack" not in nh and pt.ADDENDUM in nh

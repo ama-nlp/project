@@ -15,6 +15,7 @@
 # PROJECT_INTERP_STEP=opening runs I7 instead (scripts/interp_opening.py): the
 # model's own probability of opening with the hack vs <thinking>, per prompt,
 # with a logit lens. Prompt-only forward passes.
+# PROJECT_INTERP_STEP=ablate|patch runs I3a / I3b (scripts/interp_patch.py).
 #
 #   sbatch --nodelist=gnode062 --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16,\
 #     PROJECT_INTERP_RUNS="C022=runs/aisi-rh-eval-2717029/main A022=runs/aisi-rh-eval-2717039/arm-A ..." \
@@ -85,6 +86,20 @@ print('torch', torch.__version__, '| transformers', transformers.__version__,
 # --- model -------------------------------------------------------------------
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
 MODEL=$(stage_model "$NAME")
+
+# --- I3a / I3b: prompt ablations and activation patching ----------------------
+case "${PROJECT_INTERP_STEP:-extract}" in
+    ablate)
+        "$PY" scripts/interp_patch.py --mode ablate --model "$MODEL" --traces "$TRACES" \
+            --out "$OUT" ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+        echo "results: $OUT"; exit 0 ;;
+    patch)
+        "$PY" scripts/interp_patch.py --mode patch --model "$MODEL" --traces "$TRACES" \
+            --out "$OUT" --ablate "${PROJECT_INTERP_ABLATE:?set PROJECT_INTERP_ABLATE}" \
+            ${PROJECT_INTERP_PAIRS:+--pairs "$PROJECT_INTERP_PAIRS"} \
+            ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+        echo "results: $OUT"; exit 0 ;;
+esac
 
 # --- I7: first-token opening probabilities and logit lens ---------------------
 if [ "${PROJECT_INTERP_STEP:-extract}" = "opening" ]; then
