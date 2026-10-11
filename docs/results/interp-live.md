@@ -19,8 +19,8 @@ If it is, then (1) a linear probe on the activations at the last prompt token sh
 | **I0** | Load check: the 4-bit model in transformers with hooks; NLL of stored vLLM completions under teacher forcing | 8 traces | **done (job 9651): passed** |
 | **I1** | **Temporal hack probe.** Residual stream at p0 (last prompt token), c16, c64, `</thinking>`, and the token before the hack; problem-grouped CV probes per layer for `hack_attempt` | 800 stored kl0.02 traces (Runs 022 C/A/B, 029 C); forward passes only | **done (jobs 9653, 10066)**: see findings |
 | I2 | **Samples per problem.** p0 is identical for every sample of a problem, so it can only predict the problem's propensity. To separate "decided at p0" from "decided during generation", generate ~8 samples per problem and compare p0 (problem-level) with c16/c64 (sample-level, via the within-problem AUC) | vLLM, ~2–3 h | planned |
-| **I3a** | **What in the prompt sets the opening decision.** Metric from I7: logit(`file`) − logit(`thinking`) at the `<` position, exact per prompt and calibrated against sampled openings (so the planned code-start metric is replaced). Corruptions of Run 022's 200 Arm-C prompts, token-aligned (segment tokens overwritten by neutral filler of the same token count): all three hack hints; each hint alone (always-equal, exit, conftest); the "don't hack" addendum. Plus AISI's own `no_hints` prompt (different length) | `scripts/interp_patch.py --mode ablate`; 7 forward passes per prompt, ~2.5 h | running (job 14783) |
-| **I3b** | **Activation patching.** On the 30 prompts with the largest clean − hints-neutralised gap, run the corrupted prompt and copy the clean residual stream into it at one layer (0, 8, …, 56, 63) for one segment (task + intro, hints, addendum, format instructions, problem, test cases, template tail incl. `<`): fraction of the gap recovered. If neutralising the hints barely moves the metric, the hack is not read from the hints, and pairs will need a different corruption | `--mode patch`; 65 forward passes per pair, ~3.5 h | after I3a |
+| **I3a** | **What in the prompt sets the opening decision.** Metric from I7: logit(`file`) − logit(`thinking`) at the `<` position, exact per prompt and calibrated against sampled openings (so the planned code-start metric is replaced). Corruptions of Run 022's 200 Arm-C prompts, token-aligned (segment tokens overwritten by neutral filler of the same token count): all three hack hints; each hint alone (always-equal, exit, conftest); the "don't hack" addendum. Plus AISI's own `no_hints` prompt (different length) | `scripts/interp_patch.py --mode ablate`; 7 forward passes per prompt, ~2.5 h | **done (job 14783)**: see findings |
+| **I3b** | **Activation patching on the "don't hack" addendum.** Pairs: clean vs addendum neutralised (24 tokens), the 30 prompts with the largest gap (chosen after I3a: the most consistent effect, 199/200). Run the corrupted prompt and copy the clean residual stream into it at one layer (0, 8, …, 56, 63) for one segment (task + intro, hints, addendum, format instructions, problem, test cases, template tail incl. `<`); score the fraction of the clean − corrupt gap recovered. Built-in check: patching the addendum segment itself should recover nearly all of it from early layers on. A second run on the conftest hint is planned after a filler-only control | `--mode patch --corruption addendum`; 65 forward passes per pair, ~3.5 h | running (job 16330) |
 | I3c | **Causal steering at p0 / early tokens.** Add ± the hack direction (from I1, or the one I3b localises) at the best layers during generation; measure the sampled hack rate. Controls: random direction of matched norm; an unrelated-concept direction. Contrast with Runs 028–029 (content prefills had no content effect) | HF generation with hooks (slow) or vLLM with a steering hook | planned, after I3b |
 | I4 | **Surveillance direction (exploratory).** v_surveillance = mean(A-pen) − mean(B-pen) at the prompt; transfer across paraphrases (train on A-pen/B-pen, test on -2/-3) and against placebo F; does it predict mention rate? | kl0.0 prompts; forward passes on the prompt only | planned |
 | I5 | **Novelty test.** Cosine and cross-transfer between v_surveillance and a general evaluation-awareness direction (Nguyen et al. 2025; Abdelnabi & Salem 2025) | prompt-only forward passes | planned, after I4 |
@@ -67,6 +67,8 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 
 | Date | Job | Step | Result | Notes |
 |---|---|---|---|---|
+| 2026-10-11 | 16330 | I3b | submitted with `--corruption addendum` (`1c4a61a`) | |
+| 2026-10-11 | 14783 | **I3a** | **Completed** (2 h 11 min, 200 prompts). Metric change vs clean (prompts up/down): all hints neutralised +0.144 (141/56); always-equal hint −0.246 (5/194); exit hint −0.154 (18/179); conftest hint −0.340 (5/194); **addendum +0.363 (199/1)**; AISI `no_hints` **+0.472 (189/9)**. Clean metric +0.872 (P(`file` given `<`) 0.691) | Clean values match I7. Neutralised token counts: hints 238, hint_eq 90, exit 67, conftest 81, addendum 24 |
 | 2026-10-10 | 14783 | I3a | submitted (`bef3064`) | Segment finding checked on all 200 real prompts (0 failures); token-aligned corruption keeps every other position fixed for I3b |
 | 2026-10-10 | 10721, 10717 | **I7b** | **Completed** (both ran all 1,400 prompts, ~2 h 25 min each on gnode056, one after the other). Arm C is identical to every digit across the two jobs. P(hack first), arm − C (problems higher): F +0.024 (177); B +0.042 (190); B-mon +0.042 (188); B-pen −0.023 (45); B-pen-2 −0.007 (72); B-pen-3 +0.011 (135); **A +0.093 (200)**; A-pen +0.040 (193); A-pen-2 −0.009 (73); A-pen-3 +0.051 (199); E +0.053 (199); E-pen +0.064 (200). C = 0.685 | Both jobs exited FAILED only at the final print of the logit-lens table (the AUC is undefined without sampled outputs); `opening.jsonl` and `opening_summary.json` were already written. Print fixed. Per-medium-QoS limit is 4 GPUs per user, so 10717 had to wait for 10721; moved from `nlp` to `research` with `scontrol update` |
 | 2026-10-07 | 10721, 10717 | I7b | 10721 (C, A, B, E, F, A-pen, B-pen) running on gnode056; 10717 (C, E-pen, A-pen-2/3, B-pen-2/3, B-mon; `nlp` account) waiting on the account's CPU limit. First Arm-C prompts reproduce job 10081 to within 0.004 | ~6.7 s per prompt, ~2.6 h per job. Arm prompts checked: the arm sentence appears once, matches the real A022 prompt, and user messages are identical across arms |
@@ -86,6 +88,24 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 | 2026-10-06 | — | setup | Code written: `scripts/interp_export.py`, `scripts/interp_extract.py`, `scripts/interp_probe.py`, `slurm/interp.sbatch`; 7 tests | Runs on Advait's account: the 32B models and traces are only there (Revan's `/share1` has no 32B models and can't read Advait's) |
 
 ## Current findings
+
+**I3a (kl0.02; job 14783): the hack is not read from the hints; the prompt's warnings hold it back.**
+
+| Prompt change (token-aligned neutral filler unless noted) | metric − clean | prompts up / down |
+|---|---:|---:|
+| "Don't hack" addendum removed | **+0.363** | 199 / 1 |
+| AISI `no_hints` (no hack descriptions at all; not token-aligned) | **+0.472** | 189 / 9 |
+| All three hints removed | +0.144 | 141 / 56 |
+| Always-equal hint only | −0.246 | 5 / 194 |
+| Exit hint only | −0.154 | 18 / 179 |
+| Conftest hint only | −0.340 | 5 / 194 |
+
+(metric = logit(`file`) − logit(`thinking`) at the `<` position; higher = more likely to write the hack before reasoning. Clean: +0.872.)
+
+1. **Telling the model not to hack works a little, at the decision itself.** Removing the "don't hack" sentence raises hack-first on 199/200 prompts.
+2. **The hack is internalised.** With no hack descriptions at all (AISI's `no_hints`), the model is *more* likely to open with the hack, not less. Describing the hacks, alongside the warning, makes it slightly more likely to reason first.
+3. **The hint effects are not additive.** Removing any single hint lowers hack-first; removing all three raises it. One likely confound: the neutral filler (text about a garden plan) is not neutral when it sits inside a numbered list. A filler-only control (overwrite an equal-length span of the problem text) is needed before reading the single-hint results.
+4. **Consequence for I3b:** the all-hints corruption is the weakest and least consistent, so I3b patches the addendum instead: where, and at what depth, does "don't hack" reach the decision?
 
 **I7b (kl0.02; jobs 10721, 10717): every arm, exact P(hack first) on the same 200 prompts.**
 
