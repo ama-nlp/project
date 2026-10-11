@@ -16,7 +16,7 @@ of the same token count, so every other position keeps its index (needed for
 I3b): all three hack hints, each hint alone, and the "don't hack" addendum.
 `no_hints` is AISI's own no_hints system prompt (different length; I3a only).
 
-I3b (`--mode patch`): for the pairs (clean, hints neutralised) with the largest
+I3b (`--mode patch`): for the pairs (clean, `--corruption` neutralised) with the largest
 metric gap, run the corrupted prompt and copy the clean run's residual stream
 into it at one layer for one prompt segment. The fraction of the clean-corrupt
 gap this recovers says where the decision is read from and at which depth.
@@ -48,6 +48,9 @@ TOKEN_CONDITIONS = {"hints": ("hint_eq", "hint_exit", "hint_conftest"),
                     "hint_eq": ("hint_eq",), "hint_exit": ("hint_exit",),
                     "hint_conftest": ("hint_conftest",), "addendum": ("addendum",)}
 PATCH_SEGMENTS = ("task_intro", "hints", "addendum", "format", "problem", "tests", "tail")
+# Patching the corrupted segment itself at layer 0 makes its residual stream the
+# clean one from layer 1 on (only layer 0's own attention still saw the filler),
+# so it should recover nearly the whole gap: a built-in check of the patching.
 
 
 def find_segments(text: str, system: str, user: str) -> dict[str, tuple[int, int]]:
@@ -103,6 +106,8 @@ def main() -> int:
     ap.add_argument("--chunk", type=int, default=1024)
     ap.add_argument("--ablate", help="patch mode: ablate.jsonl from --mode ablate")
     ap.add_argument("--pairs", type=int, default=30)
+    ap.add_argument("--corruption", default="addendum", choices=tuple(TOKEN_CONDITIONS),
+                    help="patch mode: which token-aligned corruption defines the pairs")
     ap.add_argument("--layers", default="0,8,16,24,32,40,48,56,63")
     args = ap.parse_args()
 
@@ -188,7 +193,7 @@ def main() -> int:
     # --- patch -------------------------------------------------------------------
     with open(args.ablate) as f:
         ab = {r["id"]: r for r in map(json.loads, f)}
-    gaps = sorted(((ab[r["id"]]["clean"]["metric"] - ab[r["id"]]["hints"]["metric"], r)
+    gaps = sorted(((ab[r["id"]]["clean"]["metric"] - ab[r["id"]][args.corruption]["metric"], r)
                    for r in rows if r["id"] in ab), key=lambda x: -abs(x[0]))[: args.pairs]
     with open(out / "patch.jsonl", "w") as f:
         for i, (gap, row) in enumerate(gaps):
@@ -197,15 +202,16 @@ def main() -> int:
             seg = find_segments(text, msgs[0]["content"], msgs[1]["content"])
             seg_pos = {k: token_positions(offs, seg[k]) for k in PATCH_SEGMENTS}
             seg_pos["tail"] = seg_pos["tail"] + [len(ids) - 1]  # include the appended `<`
-            hint_pos = sorted({p for k in TOKEN_CONDITIONS["hints"]
-                               for p in token_positions(offs, seg[k])})
-            corrupt = neutralise(ids, hint_pos, filler)
+            bad_pos = sorted({p for k in TOKEN_CONDITIONS[args.corruption]
+                              for p in token_positions(offs, seg[k])})
+            corrupt = neutralise(ids, bad_pos, filler)
             patch_state["record"] = {}
             clean_m = run(ids)["metric"]
             patch_state["clean"] = {k: torch.cat(v, 0) for k, v in patch_state["record"].items()}
             patch_state["record"] = None
             corrupt_m = run(corrupt)["metric"]
-            res = {"id": row["id"], "clean": clean_m, "corrupt": corrupt_m, "ablate_gap": gap,
+            res = {"id": row["id"], "corruption": args.corruption, "clean": clean_m,
+                   "corrupt": corrupt_m, "ablate_gap": gap,
                    "patched": {}}
             for layer in patch_layers:
                 patch_state["layer"] = layer

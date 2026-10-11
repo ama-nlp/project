@@ -97,6 +97,7 @@ case "${PROJECT_INTERP_STEP:-extract}" in
         "$PY" scripts/interp_patch.py --mode patch --model "$MODEL" --traces "$TRACES" \
             --out "$OUT" --ablate "${PROJECT_INTERP_ABLATE:?set PROJECT_INTERP_ABLATE}" \
             ${PROJECT_INTERP_PAIRS:+--pairs "$PROJECT_INTERP_PAIRS"} \
+            ${PROJECT_INTERP_CORRUPTION:+--corruption "$PROJECT_INTERP_CORRUPTION"} \
             ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
         echo "results: $OUT"; exit 0 ;;
 esac
