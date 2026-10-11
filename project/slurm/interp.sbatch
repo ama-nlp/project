@@ -51,6 +51,12 @@ nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv
 # torch 2.11's cu128 build has no Pascal (sm_61) kernels: job 10716 on a
 # GTX 1080 Ti node failed with "no kernel image". Hence --constraint=2080ti.
 CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+# gnode069 (job 16330) exposed only 3 of its 4 cards ("Failed to get device
+# handle for GPU 1"); stop at once rather than load onto a degraded node.
+NGPU=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU")
+if [ "$NGPU" -lt 4 ]; then
+    echo "FATAL: only $NGPU GPUs visible on $(hostname); resubmit with --exclude=$(hostname)"; exit 1
+fi
 if [ "${CAP%%.*}" -lt 7 ]; then
     echo "FATAL: compute capability $CAP; torch here needs >= 7.0 (use a 2080ti node)"; exit 1
 fi
