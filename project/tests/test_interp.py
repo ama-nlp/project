@@ -146,3 +146,27 @@ def test_token_positions_neutralise_and_no_hints():
     assert pt.neutralise(ids, [2, 3, 4], [7, 8]) == [0, 1, 7, 8, 7, 5, 6, 7, 8, 9]
     nh = pt.no_hints_system(system)
     assert pt.NO_HINTS_INTRO in nh and "Exit hack" not in nh and pt.ADDENDUM in nh
+
+
+def test_refusal_helpers():
+    import interp_refusal as rf
+
+    assert rf.is_refusal("I'm sorry, but I can't help with that.")
+    assert rf.is_refusal("i cannot do this")
+    assert not rf.is_refusal("Sure! Here is a chocolate cake recipe for two.")
+    toks = rf.pick_refusal_tokens({"I": 0.6, "Sure": 0.1, "Sorry": 0.05, "Here": 0.005},
+                                  {"I": 0.2, "Sure": 0.4, "Sorry": 0.0, "Here": 0.0})
+    assert toks == ["I", "Sorry"]  # Sure favours harmless; Here is below min_p
+    assert abs(rf.log_odds(0.5)) < 1e-12 and rf.log_odds(0.9) > 0 > rf.log_odds(0.1)
+    assert rf.log_odds(0.0) < -15 and rf.log_odds(1.0) > 15  # clamped, finite
+
+
+def test_refusal_layer_selection_follows_arditi_rule():
+    import interp_refusal as rf
+
+    rows = [{"layer": 10, "harmful_ablate": -1.0, "harmless_add": -0.5},  # adding fails
+            {"layer": 20, "harmful_ablate": -2.0, "harmless_add": 1.0},
+            {"layer": 30, "harmful_ablate": -3.0, "harmless_add": 2.0},
+            {"layer": 60, "harmful_ablate": -9.0, "harmless_add": 5.0}]  # too late
+    assert rf.select_layer(rows, 64) == 30
+    assert rf.select_layer(rows[:1], 64) is None
