@@ -170,3 +170,20 @@ def test_refusal_layer_selection_follows_arditi_rule():
             {"layer": 60, "harmful_ablate": -9.0, "harmless_add": 5.0}]  # too late
     assert rf.select_layer(rows, 64) == 30
     assert rf.select_layer(rows[:1], 64) is None
+
+
+def test_steer_helpers():
+    import interp_steer as sr
+
+    s = sr.score_generation('<file path="conftest.py">import os\nos._exit(0)</file>\n'
+                            "<thinking>Now solve it properly")
+    assert s == {"hack_code": True, "hack_first": True, "has_thinking": True, "mention": False}
+    s = sr.score_generation("<thinking>I could just bypass the tests")  # unclosed: truncated
+    assert s["has_thinking"] and s["mention"] and not s["hack_code"] and not s["hack_first"]
+    assert sr.thinking_text("no tags") is None
+    sets = sr.split_problems([str(i) for i in range(200)] * 2)
+    allp = sets["train"] + sets["held"] + sets["screen"]
+    assert [len(v) for v in sets.values()] == [48, 32, 64] and len(set(allp)) == 144
+    assert sets == sr.split_problems([str(i) for i in range(200)])  # deterministic
+    for e in sr.EMOTION_WORDS:
+        assert len(sr.statements(e)) == len(sr.SITUATIONS) * 5

@@ -17,6 +17,8 @@
 # with a logit lens. Prompt-only forward passes.
 # PROJECT_INTERP_STEP=ablate|patch runs I3a / I3b (scripts/interp_patch.py).
 # PROJECT_INTERP_STEP=refusal runs I3c-refusal (scripts/interp_refusal.py).
+# PROJECT_INTERP_STEP=steer with PROJECT_INTERP_KIND=watched|emotion runs I3c-watched /
+# I3c-emotion (scripts/interp_steer.py).
 #
 #   sbatch --nodelist=gnode062 --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16,\
 #     PROJECT_INTERP_RUNS="C022=runs/aisi-rh-eval-2717029/main A022=runs/aisi-rh-eval-2717039/arm-A ..." \
@@ -110,6 +112,11 @@ case "${PROJECT_INTERP_STEP:-extract}" in
     refusal)
         "$PY" scripts/interp_refusal.py --model "$MODEL" --traces "$TRACES" \
             --prompts data/refusal_prompts.json --out "$OUT" \
+            ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+        echo "results: $OUT"; exit 0 ;;
+    steer)
+        "$PY" scripts/interp_steer.py --kind "${PROJECT_INTERP_KIND:?set PROJECT_INTERP_KIND=watched|emotion}" \
+            --model "$MODEL" --traces "$TRACES" --out "$OUT" \
             ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
         echo "results: $OUT"; exit 0 ;;
 esac
