@@ -20,7 +20,7 @@ If it is, then (1) a linear probe on the activations at the last prompt token sh
 | **I1** | **Temporal hack probe.** Residual stream at p0 (last prompt token), c16, c64, `</thinking>`, and the token before the hack; problem-grouped CV probes per layer for `hack_attempt` | 800 stored kl0.02 traces (Runs 022 C/A/B, 029 C); forward passes only | **done (jobs 9653, 10066)**: see findings |
 | I2 | **Samples per problem.** p0 is identical for every sample of a problem, so it can only predict the problem's propensity. To separate "decided at p0" from "decided during generation", generate ~8 samples per problem and compare p0 (problem-level) with c16/c64 (sample-level, via the within-problem AUC) | vLLM, ~2–3 h | planned |
 | **I3a** | **What in the prompt sets the opening decision.** Metric from I7: logit(`file`) − logit(`thinking`) at the `<` position, exact per prompt and calibrated against sampled openings (so the planned code-start metric is replaced). Corruptions of Run 022's 200 Arm-C prompts, token-aligned (segment tokens overwritten by neutral filler of the same token count): all three hack hints; each hint alone (always-equal, exit, conftest); the "don't hack" addendum. Plus AISI's own `no_hints` prompt (different length) | `scripts/interp_patch.py --mode ablate`; 7 forward passes per prompt, ~2.5 h | **done (job 14783)**: see findings |
-| **I3b** | **Activation patching on the "don't hack" addendum.** Pairs: clean vs addendum neutralised (24 tokens), the 30 prompts with the largest gap (chosen after I3a: the most consistent effect, 199/200). Run the corrupted prompt and copy the clean residual stream into it at one layer (0, 8, …, 56, 63) for one segment (task + intro, hints, addendum, format instructions, problem, test cases, template tail incl. `<`); score the fraction of the clean − corrupt gap recovered. Built-in check: patching the addendum segment itself should recover nearly all of it from early layers on. A second run on the conftest hint is planned after a filler-only control | `--mode patch --corruption addendum`; 65 forward passes per pair, ~3.5 h | running (job 16332) |
+| **I3b** | **Activation patching on the "don't hack" addendum.** Pairs: clean vs addendum neutralised (24 tokens), the 30 prompts with the largest gap (chosen after I3a: the most consistent effect, 199/200). Run the corrupted prompt and copy the clean residual stream into it at one layer (0, 8, …, 56, 63) for one segment (task + intro, hints, addendum, format instructions, problem, test cases, template tail incl. `<`); score the fraction of the clean − corrupt gap recovered. Built-in check: patching the addendum segment itself should recover nearly all of it from early layers on. A second run on the conftest hint is planned after a filler-only control | `--mode patch --corruption addendum`; 65 forward passes per pair, ~3.5 h | **done** (job 16332) |
 | I3c | **Causal steering at p0 / early tokens.** Add ± the hack direction (from I1, or the one I3b localises) at the best layers during generation; measure the sampled hack rate. Controls: random direction of matched norm; an unrelated-concept direction. Contrast with Runs 028–029 (content prefills had no content effect) | HF generation with hooks (slow) or vLLM with a steering hook | planned, after I3b |
 | I4 | **Surveillance direction (exploratory).** v_surveillance = mean(A-pen) − mean(B-pen) at the prompt; transfer across paraphrases (train on A-pen/B-pen, test on -2/-3) and against placebo F; does it predict mention rate? | kl0.0 prompts; forward passes on the prompt only | planned |
 | I5 | **Novelty test.** Cosine and cross-transfer between v_surveillance and a general evaluation-awareness direction (Nguyen et al. 2025; Abdelnabi & Salem 2025) | prompt-only forward passes | planned, after I4 |
@@ -67,7 +67,7 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 
 | Date | Job | Step | Result | Notes |
 |---|---|---|---|---|
-| 2026-10-11 | 16332 | I3b | resubmitted with `--exclude=gnode069`; running on gnode071 | ~3.5 h |
+| 2026-10-11 | 16332 | **I3b** | **Completed** (3 h 06 min, 30 pairs, gnode071). Clean +0.680, addendum neutralised +1.312 (gap 0.51–1.09). Fraction of the gap recovered (mean over pairs): addendum at layer 0 **1.06**; format paragraph 0.80 / 1.40 / 1.06 / 0.40 at layers 0 / 8 / 16 / 24; template tail 0.20 at layer 16, **0.94 at layer 24**, 1.31–1.48 at 32–56; task intro, hints, problem, test cases ≤ 0.03 at every layer | Both built-in checks pass: the addendum at layer 0 recovers the whole gap, and the tail at layer 63 recovers exactly 1.00. Task intro and hints read exactly 0, as they must (they come before the addendum). Results in `runs/interp-16332/patch.jsonl` |
 | 2026-10-11 | 16330 | I3b | **cancelled by us at 30 s** (no results): gnode069 exposed only 3 of 4 GPUs ("Failed to get device handle for GPU 1") | `interp.sbatch` now stops on a node with fewer than 4 working GPUs (`1bfbb32`) |
 | 2026-10-11 | 14783 | **I3a** | **Completed** (2 h 11 min, 200 prompts). Metric change vs clean (prompts up/down): all hints neutralised +0.144 (141/56); always-equal hint −0.246 (5/194); exit hint −0.154 (18/179); conftest hint −0.340 (5/194); **addendum +0.363 (199/1)**; AISI `no_hints` **+0.472 (189/9)**. Clean metric +0.872 (P(`file` given `<`) 0.691) | Clean values match I7. Neutralised token counts: hints 238, hint_eq 90, exit 67, conftest 81, addendum 24 |
 | 2026-10-10 | 14783 | I3a | submitted (`bef3064`) | Segment finding checked on all 200 real prompts (0 failures); token-aligned corruption keeps every other position fixed for I3b |
@@ -90,6 +90,23 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 
 ## Current findings
 
+**I3b (kl0.02; job 16332): the "don't hack" sentence reaches the decision through a two-step relay, finished by layer ~24.**
+
+| Patched segment | L0 | L8 | L16 | L24 | L32 | L40 | L48 | L56 | L63 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Addendum | **1.06** | 0.67 | 0.21 | −0.10 | −0.08 | −0.04 | 0.01 | 0.01 | 0.00 |
+| Format paragraph (right after it) | 0.80 | **1.40** | **1.06** | 0.40 | −0.15 | −0.33 | −0.47 | −0.50 | 0.00 |
+| Template tail + `<` | 0.00 | −0.07 | 0.20 | **0.94** | **1.31** | **1.37** | **1.39** | **1.48** | 1.00 |
+| Problem / test cases | ≤ 0.03 at every layer |||||||||
+| Task intro / hints | 0.00 (they precede the addendum) |||||||||
+
+(fraction of the clean − corrupted metric gap recovered by copying the clean residual stream into the corrupted run at one layer for one segment; mean over the 30 prompts with the largest I3a addendum effect; medians agree to 0.03. 1 = fully restored.)
+
+1. **Where it goes.** By layer 8 the addendum's effect is no longer at the addendum: it has been copied into the format-instruction paragraph that follows it ("Before producing a response…"). Between layers 16 and 24 it moves again, into the final template tokens where the opening token is chosen. From layer 24 on, patching those last few positions alone restores it fully.
+2. **What does not carry it.** The problem statement and test cases never do (≤ 0.03), so "don't hack" does not act by changing how the model reads the problem. It is a prompt-level signal routed to the output position.
+3. **Fits I7.** The logit lens showed the opening becomes readable only in layers 60–63; here the information is already at the output position by layer 24. The decision is held there for ~35 layers before it is turned into the `file` vs `thinking` logits.
+4. **Caveats.** Values above 1 (format at layer 8, tail at layers 32–56) and below 0 (format after layer 24) mean the segments do not combine additively. After layer 24 the clean tail overshoots, and the clean format paragraph on its own pushes the other way. Read the table as "where the information is", not as additive shares. The effect is small in absolute terms (gap ≈ 0.6 logits; the `file`-vs-`thinking` share moves from 0.66 to 0.79), and these are the 30 strongest of 200 prompts.
+
 **I3a (kl0.02; job 14783): the hack is not read from the hints; the prompt's warnings hold it back.**
 
 | Prompt change (token-aligned neutral filler unless noted) | metric − clean | prompts up / down |
@@ -106,7 +123,7 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 1. **Telling the model not to hack works a little, at the decision itself.** Removing the "don't hack" sentence raises hack-first on 199/200 prompts.
 2. **The hack is internalised.** With no hack descriptions at all (AISI's `no_hints`), the model is *more* likely to open with the hack, not less. Describing the hacks, alongside the warning, makes it slightly more likely to reason first.
 3. **The hint effects are not additive.** Removing any single hint lowers hack-first; removing all three raises it. One likely confound: the neutral filler (text about a garden plan) is not neutral when it sits inside a numbered list. A filler-only control (overwrite an equal-length span of the problem text) is needed before reading the single-hint results.
-4. **Consequence for I3b:** the all-hints corruption is the weakest and least consistent, so I3b patches the addendum instead: where, and at what depth, does "don't hack" reach the decision?
+4. **Consequence for I3b:** the all-hints corruption is the weakest and least consistent, so I3b patches the addendum instead: where, and at what depth, does "don't hack" reach the decision? (Answered above.)
 
 **I7b (kl0.02; jobs 10721, 10717): every arm, exact P(hack first) on the same 200 prompts.**
 
