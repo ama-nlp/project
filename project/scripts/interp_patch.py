@@ -203,7 +203,10 @@ def main() -> int:
                         res[cond] = run(nh_ids)
                         continue
                     if cond == "filler_problem":
-                        pos = filler_problem_positions(offs, seg)
+                        try:
+                            pos = filler_problem_positions(offs, seg)
+                        except ValueError:  # problem shorter than the hint: skip this row
+                            continue
                     else:
                         pos = sorted({p for k in TOKEN_CONDITIONS[cond]
                                       for p in token_positions(offs, seg[k])})
@@ -213,7 +216,7 @@ def main() -> int:
                 f.flush()
                 if i < 3 or i % 25 == 0:
                     print(f"[{i + 1}/{len(rows)}] {row['id']} clean {res['clean']['metric']:+.2f} "
-                          + " ".join(f"{c} {res[c]['metric']:+.2f}" for c in conds)
+                          + " ".join(f"{c} {res[c]['metric']:+.2f}" for c in conds if c in res)
                           + f" ({time.time() - t1:.0f} s)", flush=True)
         return 0
 
