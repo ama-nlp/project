@@ -18,7 +18,8 @@
 # PROJECT_INTERP_STEP=ablate|patch runs I3a / I3b (scripts/interp_patch.py).
 # PROJECT_INTERP_STEP=refusal runs I3c-refusal (scripts/interp_refusal.py).
 # PROJECT_INTERP_STEP=steer with PROJECT_INTERP_KIND=watched|emotion runs I3c-watched /
-# I3c-emotion (scripts/interp_steer.py).
+# I3c-emotion (scripts/interp_steer.py). PROJECT_INTERP_STEP=distress runs I3d
+# (scripts/interp_distress.py).
 #
 #   sbatch --nodelist=gnode062 --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16,\
 #     PROJECT_INTERP_RUNS="C022=runs/aisi-rh-eval-2717029/main A022=runs/aisi-rh-eval-2717039/arm-A ..." \
@@ -100,18 +101,26 @@ MODEL=$(stage_model "$NAME")
 case "${PROJECT_INTERP_STEP:-extract}" in
     ablate)
         "$PY" scripts/interp_patch.py --mode ablate --model "$MODEL" --traces "$TRACES" \
-            --out "$OUT" ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+            --out "$OUT" ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"} \
+            ${PROJECT_INTERP_RUN:+--run "$PROJECT_INTERP_RUN"} \
+            ${PROJECT_INTERP_CONDITIONS:+--conditions "$PROJECT_INTERP_CONDITIONS"}
         echo "results: $OUT"; exit 0 ;;
     patch)
         "$PY" scripts/interp_patch.py --mode patch --model "$MODEL" --traces "$TRACES" \
             --out "$OUT" --ablate "${PROJECT_INTERP_ABLATE:?set PROJECT_INTERP_ABLATE}" \
             ${PROJECT_INTERP_PAIRS:+--pairs "$PROJECT_INTERP_PAIRS"} \
             ${PROJECT_INTERP_CORRUPTION:+--corruption "$PROJECT_INTERP_CORRUPTION"} \
+            ${PROJECT_INTERP_RUN:+--run "$PROJECT_INTERP_RUN"} \
             ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
         echo "results: $OUT"; exit 0 ;;
     refusal)
         "$PY" scripts/interp_refusal.py --model "$MODEL" --traces "$TRACES" \
             --prompts data/refusal_prompts.json --out "$OUT" \
+            ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+        echo "results: $OUT"; exit 0 ;;
+    distress)
+        "$PY" scripts/interp_distress.py --model "$MODEL" --traces "$TRACES" --out "$OUT" \
+            --old-directions runs/interp-16980/directions.pt \
             ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
         echo "results: $OUT"; exit 0 ;;
     steer)

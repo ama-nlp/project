@@ -47,6 +47,11 @@ FILLER = ("The committee met on Tuesday to review the annual garden plan, the li
 TOKEN_CONDITIONS = {"hints": ("hint_eq", "hint_exit", "hint_conftest"),
                     "hint_eq": ("hint_eq",), "hint_exit": ("hint_exit",),
                     "hint_conftest": ("hint_conftest",), "addendum": ("addendum",)}
+# Filler-only control for the hint ablations: the same filler over the same number
+# of tokens as the conftest hint, but inside the problem statement (after its
+# heading), where it replaces no instruction. If this moves the metric as much
+# as removing a single hint, the single-hint effects are a filler artefact.
+CONTROL_CONDITIONS = ("filler_problem", "no_hints")
 PATCH_SEGMENTS = ("task_intro", "hints", "addendum", "format", "problem", "tests", "tail")
 # Patching the corrupted segment itself at layer 0 makes its residual stream the
 # clean one from layer 1 on (only layer 0's own attention still saw the filler),
@@ -89,6 +94,15 @@ def neutralise(ids: list[int], positions: list[int], filler: list[int]) -> list[
     return out
 
 
+def filler_problem_positions(offsets, seg, skip: int = 8) -> list[int]:
+    """Token positions in the problem body, as many as the conftest hint has."""
+    n = len(token_positions(offsets, seg["hint_conftest"]))
+    body = token_positions(offsets, seg["problem"])[skip:]
+    if len(body) < n:
+        raise ValueError(f"problem body has {len(body)} tokens, need {n}")
+    return body[:n]
+
+
 def no_hints_system(system: str) -> str:
     """AISI's no_hints framing: the intro and hint list replaced by NO_HINTS_INTRO."""
     a = system.index(BASE_INTRO)
@@ -109,7 +123,15 @@ def main() -> int:
     ap.add_argument("--corruption", default="addendum", choices=tuple(TOKEN_CONDITIONS),
                     help="patch mode: which token-aligned corruption defines the pairs")
     ap.add_argument("--layers", default="0,8,16,24,32,40,48,56,63")
+    ap.add_argument("--conditions", default="all",
+                    help="ablate mode: 'all' or a '+'-separated subset of "
+                         f"{'/'.join((*TOKEN_CONDITIONS, *CONTROL_CONDITIONS))}")
     args = ap.parse_args()
+    conds = ([*TOKEN_CONDITIONS, *CONTROL_CONDITIONS] if args.conditions == "all"
+             else args.conditions.split("+"))
+    unknown = set(conds) - {*TOKEN_CONDITIONS, *CONTROL_CONDITIONS}
+    if unknown:
+        ap.error(f"unknown conditions {sorted(unknown)}")
 
     import torch
     from interp_extract import chunk_spans, load_model
@@ -175,18 +197,23 @@ def main() -> int:
                 text, ids, offs, msgs = prepare(row)
                 seg = find_segments(text, msgs[0]["content"], msgs[1]["content"])
                 res = {"id": row["id"], "n_tokens": len(ids), "clean": run(ids)}
-                for cond, parts in TOKEN_CONDITIONS.items():
-                    pos = sorted({p for k in parts for p in token_positions(offs, seg[k])})
+                for cond in conds:
+                    if cond == "no_hints":
+                        _, nh_ids, _, _ = prepare(row, no_hints_system(msgs[0]["content"]))
+                        res[cond] = run(nh_ids)
+                        continue
+                    if cond == "filler_problem":
+                        pos = filler_problem_positions(offs, seg)
+                    else:
+                        pos = sorted({p for k in TOKEN_CONDITIONS[cond]
+                                      for p in token_positions(offs, seg[k])})
                     res[cond] = run(neutralise(ids, pos, filler))
                     res[cond]["n_neutralised"] = len(pos)
-                _, nh_ids, _, _ = prepare(row, no_hints_system(msgs[0]["content"]))
-                res["no_hints"] = run(nh_ids)
                 f.write(json.dumps(res) + "\n")
                 f.flush()
                 if i < 3 or i % 25 == 0:
                     print(f"[{i + 1}/{len(rows)}] {row['id']} clean {res['clean']['metric']:+.2f} "
-                          + " ".join(f"{c} {res[c]['metric']:+.2f}"
-                                     for c in (*TOKEN_CONDITIONS, "no_hints"))
+                          + " ".join(f"{c} {res[c]['metric']:+.2f}" for c in conds)
                           + f" ({time.time() - t1:.0f} s)", flush=True)
         return 0
 

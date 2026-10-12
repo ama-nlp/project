@@ -4,6 +4,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import interp_export as ex  # noqa: E402
@@ -187,3 +189,28 @@ def test_steer_helpers():
     assert sets == sr.split_problems([str(i) for i in range(200)])  # deterministic
     for e in sr.EMOTION_WORDS:
         assert len(sr.statements(e)) == len(sr.SITUATIONS) * 5
+
+
+def test_filler_problem_control_matches_conftest_length_inside_problem():
+    import interp_patch as pt
+
+    offs = [(i, i + 1) for i in range(100)]  # one character per token
+    seg = {"hint_conftest": (10, 21), "problem": (40, 90)}
+    pos = pt.filler_problem_positions(offs, seg, skip=8)
+    assert pos == list(range(48, 59))  # 11 tokens, after the 8-token heading
+    with pytest.raises(ValueError):
+        pt.filler_problem_positions(offs, {"hint_conftest": (0, 60), "problem": (40, 90)})
+
+
+def test_distress_texts_and_lexicon():
+    import interp_distress as ds
+
+    T = ds.text_prompts()
+    by = {}
+    for x in T:
+        by.setdefault((x["cls"], x["split"]), []).append(x)
+    for cls in ("fear", "desperation", "calm", "bad_news", "neutral_news"):
+        assert len(by[(cls, "train")]) == 16 and len(by[(cls, "held")]) == 8
+    assert len({x["prompt"] for x in T}) == len(T)
+    assert ds.neg_affect_count("I was terrified and so anxious, heart pounding.") == 3
+    assert ds.neg_affect_count("A calm walk to the shop.") == 0
