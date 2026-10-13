@@ -19,7 +19,8 @@
 # PROJECT_INTERP_STEP=refusal runs I3c-refusal (scripts/interp_refusal.py).
 # PROJECT_INTERP_STEP=steer with PROJECT_INTERP_KIND=watched|emotion runs I3c-watched /
 # I3c-emotion (scripts/interp_steer.py). PROJECT_INTERP_STEP=distress runs I3d
-# (scripts/interp_distress.py).
+# (scripts/interp_distress.py). PROJECT_INTERP_STEP=jlens runs I10, the targeted
+# Jacobian lens (scripts/interp_jlens.py).
 #
 #   sbatch --nodelist=gnode062 --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16,\
 #     PROJECT_INTERP_RUNS="C022=runs/aisi-rh-eval-2717029/main A022=runs/aisi-rh-eval-2717039/arm-A ..." \
@@ -122,6 +123,11 @@ case "${PROJECT_INTERP_STEP:-extract}" in
         "$PY" scripts/interp_distress.py --model "$MODEL" --traces "$TRACES" --out "$OUT" \
             --old-directions runs/interp-16980/directions.pt \
             ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+        echo "results: $OUT"; exit 0 ;;
+    jlens)
+        "$PY" scripts/interp_jlens.py --model "$MODEL" --traces "$TRACES" --out "$OUT" \
+            ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"} \
+            ${PROJECT_INTERP_CALIB_SAMPLES:+--calib-samples "$PROJECT_INTERP_CALIB_SAMPLES"}
         echo "results: $OUT"; exit 0 ;;
     steer)
         "$PY" scripts/interp_steer.py --kind "${PROJECT_INTERP_KIND:?set PROJECT_INTERP_KIND=watched|emotion}" \

@@ -214,3 +214,97 @@ def test_distress_texts_and_lexicon():
     assert len({x["prompt"] for x in T}) == len(T)
     assert ds.neg_affect_count("I was terrified and so anxious, heart pounding.") == 3
     assert ds.neg_affect_count("A calm walk to the shop.") == 0
+
+
+class FakeTok:
+    """Word-level tokenizer: ' word' is one token if listed, else two."""
+
+    def __init__(self, words):
+        self.vocab = {" " + w: i for i, w in enumerate(words)}
+        self.inv = {i: t for t, i in self.vocab.items()}
+
+    def encode(self, text, add_special_tokens=False):
+        return [self.vocab[text]] if text in self.vocab else [998, 999]
+
+    def get_vocab(self):
+        return dict(self.vocab)
+
+    def decode(self, ids):
+        return "".join(self.inv[i] for i in ids)
+
+
+def test_jlens_concept_vocab_keeps_single_tokens_and_splits_random_words():
+    import interp_jlens as jl
+
+    filler = [f"word{chr(97 + i)}{chr(97 + j)}" for i in range(10) for j in range(10)]
+    filler = [w.replace("0", "") for w in filler]
+    tok = FakeTok(["hack", "monitor", "array"] + [w.rstrip("0123456789") for w in filler])
+    v = jl.concept_vocab(tok, n_norm=5, n_null=3)
+    assert [w for w, g in zip(v["words"], v["group"], strict=True)
+            if g not in ("norm", "null")] == ["hack", "monitor", "array"]
+    assert v["group"].count("norm") == 5 and v["group"].count("null") == 3
+    assert len(set(v["ids"])) == len(v["ids"])
+    assert jl.concept_vocab(tok, 5, 3)["ids"] == v["ids"]  # seeded
+
+
+def test_jlens_spans_stop_at_the_hack_and_skip_hack_first_outputs():
+    import interp_jlens as jl
+
+    comp = "<thinking>plan the loop carefully then</thinking>\nimport os\nos._exit(0)"
+    offs = char_offsets(comp)
+    sp = jl.trace_spans(comp, offs, len(offs), head=3)
+    a = comp.find("plan")
+    assert offs[sp["think"][0]][0] >= a and offs[sp["think"][1] - 1][1] <= comp.find("</thinking>")
+    assert sp["pre_hack_think"] == sp["think"]  # hack comes after the thinking block
+    assert sp["think_head"] == (sp["think"][0], sp["think"][0] + 3)
+    mid = "<thinking>first write conftest.py then explain</thinking>"
+    sp2 = jl.trace_spans(mid, char_offsets(mid), 100)
+    assert char_offsets(mid)[sp2["pre_hack_think"][1] - 1][1] <= mid.find("conftest")
+    first = "<file path=\"conftest.py\">x</file><thinking>why this works fine</thinking>"
+    sp3 = jl.trace_spans(first, char_offsets(first), 100)
+    assert sp3["think"] is not None and sp3["pre_hack_think"] is None and sp3["think_head"] is None
+    assert jl.trace_spans("no thinking", char_offsets("no thinking"), 100)["think"] is None
+    assert jl.trace_spans(comp, offs, 2)["think"] is None  # cut before the thinking content
+
+
+def test_jlens_future_labels_auc_and_groups():
+    import interp_jlens as jl
+
+    ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert jl.future_positive(ids, 0, 4, lo=2, hi=4)  # t+2..t+4 = 3,4,5
+    assert not jl.future_positive(ids, 0, 2, lo=2, hi=4)  # next token only
+    assert not jl.future_positive([4, 1, 2, 4], 1, 4, lo=2, hi=4, back=4)  # seen before
+    for pos, neg in (([3, 2, 2], [1, 2, 0]), ([1], [2]), ([0.5, 0.5], [0.5])):
+        assert jl.rank_auc(pos, neg) == pytest.approx(ip.auc(pos + neg, [1] * len(pos) + [0] * len(neg)))
+    assert jl.rank_auc([], [1]) is None
+    g = jl.trace_group
+    assert g({"hack_attempt": True, "mention": False}) == "hack_nomention"
+    assert g({"hack_attempt": True, "mention": True}) == "hack_mention"
+    assert g({"hack_attempt": False, "mention": False}) == "nohack"
+    assert g({"hack_attempt": False, "mention": True}) is None
+
+
+def test_jlens_summarise_on_synthetic_records():
+    import interp_jlens as jl
+
+    meta = {"layers": [8, 24], "words": ["hack", "monitor", "x", "y"],
+            "group": ["hack_core", "monitor", "norm", "null"]}
+
+    def arr(h, m):  # [lens][layer][k]
+        return [[[h, m, 0.0, 0.0] for _ in range(2)] for _ in range(2)]
+
+    recs = []
+    for i in range(6):
+        hack = i < 3
+        sp = arr(1.0 + i if hack else -1.0 - i, 0.0)
+        recs.append({"run": "A022" if i % 2 else "B022", "id": str(i // 2), "hack_attempt": hack,
+                     "mention": False, "hack_first": False, "p0": arr(float(hack), 0.0),
+                     "spans": {"think": arr(0.0, 2.0 if i % 2 else 1.0), "pre_hack_think": sp,
+                               "think_head": sp, "completion": sp}})
+    s = jl.summarise(meta, recs)
+    r = s["reasoning_first"]["think_head"]["jlens|24|hack_core"]
+    assert r["auc_hack_nomention_vs_nohack"] == 1.0 and r["n_hack_nomention"] == 3
+    assert s["reasoning_first"]["think_head"]["jlens|24|null"]["auc_hack_nomention_vs_nohack"] == 0.5
+    assert s["p0"]["logit|8|hack_core"]["auc_hack_attempt"] == 1.0
+    m = s["monitoring_think"]["jlens|8|monitor"]
+    assert m["paired_A_minus_B"] == 1.0 and m["A_higher"] == 3 and m["B_higher"] == 0
