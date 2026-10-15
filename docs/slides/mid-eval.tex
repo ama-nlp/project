@@ -190,6 +190,30 @@ model is told its reasoning is\ldots & if hiding is in the weights & if hiding i
 \raggedright\muted{\small Some reasoning is unfaithful in every arm (Turpin 2023; Lanham 2023), so we compare arms, not levels.}
 \end{frame}
 
+\begin{frame}{What changed since the proposal}
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\toprule
+ & proposal & now\\
+\midrule
+model & Qwen3-14B; Gemma as a second family & AISI's OLMo-3.1-32B reward-hacking organisms (Qwen never hacked)\\
+environment & LeetCode \code{run\_tests()} overwrite & AISI's CodeContests environment and scorer\\
+arms & A--F, each in 3 paraphrases & A, B, C, E, F; \textbf{added} penalty arms, their paraphrases, B-mon; D derived from B\\
+added test & -- & \textbf{prefill}: does the reasoning cause the hack?\\
+mechanistic & steer a ``surveillance direction'' to toggle hiding & \textbf{is the hack decided before the reasoning?} (surveillance direction now exploratory)\\
+dropped for now & dose-response over privacy strength; second family & not started\\
+\bottomrule
+\end{tabularx}
+\vspace{6pt}
+\footnotesize
+\begin{itemize}
+\item The question is unchanged: does a \emph{stated} belief about monitoring make the model hide its hack?
+\item The claim is narrower: we test whether the model stops \emph{narrating} the hack, not concealment that would cost it the hack.
+\end{itemize}
+\vfill
+\end{frame}
+
 % ==================================================================
 \section{setup}
 
