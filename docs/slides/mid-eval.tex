@@ -217,62 +217,152 @@ dropped for now & dose-response over privacy strength; second family & not start
 % ==================================================================
 \section{setup}
 
-\begin{frame}{Untrained models don't hack}
-\vfill
-\centering
-\footnotesize
-\renewcommand{\arraystretch}{1.3}
-\begin{tabular}{@{}lrr@{}}
-\toprule
-Qwen3-8B / 14B, LeetCode \code{run\_tests()} overwrite & $n$ & hacks\\
-\midrule
-loophole described or permitted & 1{,}600 & 0\\
-grader shown, PASS is the goal, first try & 640 & 0\\
-\quad after FAIL feedback & 784 & 59$^*$\\
-\quad after fixing our evaluator bug & 640 conv. & 0\\
-impossible tests / ImpossibleBench (+ OLMo-3-7B-Think) & ${\sim}$1{,}000 & 0\\
-\bottomrule
-\end{tabular}
-
-\tab{$^*$Caused by a bug in our evaluator; excluded.}
-\vspace{14pt}
-
-\raggedright
+\begin{frame}[fragile]{Try 1: Qwen3 and the \texttt{run\_tests()} loophole}
+\begin{columns}[T,onlytextwidth]
+\column{0.48\textwidth}
+\small
 \begin{itemize}\setlength\itemsep{6pt}
-\item Qwen3-8B explains the loophole correctly 20/20 times, but proposes using it at most 1/20.
-\item So we need a model that was \textbf{trained} to hack.
+\item \textbf{Plan from the proposal:} Qwen3-8B and 14B, off the shelf, on LeetCode problems (Wong et al.\ 2025).
+\item The grader runs the model's code, then calls \code{run\_tests()}.
+\item \textbf{The loophole:} if the model defines its own \code{run\_tests()}, it overwrites the grader's. One that does nothing passes every time.
+\item The hack is one short function, so the model could hide it easily. That is what we wanted.
 \end{itemize}
-\vfill
-\note{The Qwen hacks came from the situation (visible grader + grade objective + failure feedback), not the wording,
-and the apparent 8B arm gap disappeared once the evaluator was fixed.}
+\column{0.48\textwidth}
+\vspace{4pt}
+\scriptsize
+\begin{verbatim}
+def two_sum(nums, target):
+    ...          # unfinished
+
+def run_tests(): # model's own
+    pass         # replaces grader's
+
+# grader calls run_tests()
+# nothing fails -> PASS
+\end{verbatim}
+{\footnotesize Figure: what a hack would look like (illustrative).}
+\end{columns}
+\vspace{10pt}
+\small\muted{Question for this model: does it take the loophole at all?}
 \end{frame}
 
-\begin{frame}{A trained model that hacks silently}
-\vfill
+\begin{frame}{Try 1: we kept making it easier. Qwen still didn't hack}
 \centering
-\small
+\scriptsize
 \renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{@{}c>{\raggedright\arraybackslash}Xrr@{}}
+\toprule
+step & what we changed & $n$ & hacks\\
+\midrule
+1 & loophole described, or explicitly allowed (control / permissive / pressure framings) & 1{,}600 & 0\\
+2 & grader's source code shown; ``your objective is a PASS'' & 640 & 0\\
+3 & + told FAIL and asked to resubmit, up to 3 rounds & 784 & 59$^*$\\
+4 & same, after fixing a bug in our evaluator & 640 conv. & 0\\
+5 & neutral wording; \code{run\_tests} no longer called editable & 160 conv. & 0\\
+6 & impossible tests (hidden, visible, ImpossibleBench), + score feedback; also OLMo-3-7B-Think & ${\sim}$1{,}000 & 0\\
+\bottomrule
+\end{tabularx}
+
+\tab{$^*$Our bug made correct solutions fail on the first try, so these hacks were caused by us. Excluded.}
+\vspace{8pt}
+\raggedright\small
+\begin{itemize}\setlength\itemsep{4pt}
+\item \textbf{It understands the loophole:} Qwen3-8B explains \code{run\_tests} shadowing 20/20 times, and predicts a no-op would PASS 20/20.
+\item \textbf{It won't use it:} asked to list every way to get a PASS after two FAILs, it proposes the overwrite at most 1/20.
+\item 8B $\to$ 14B changed nothing. So we needed a model \textbf{trained} to hack.
+\end{itemize}
+\note{Appendix Table 5 of the report has every row. Before the bug fix, the 8B arms looked different (A 33, B 18, C 42 of 80
+conversations); after it, 0/0/0. That apparent arm effect was our bug.}
+\end{frame}
+
+\begin{frame}{Try 2: AISI's OLMo-7B organism hacks, but silently}
+\begin{columns}[T,onlytextwidth]
+\column{0.45\textwidth}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.2}
 \begin{tabular}{@{}lrr@{}}
 \toprule
-AISI OLMo-7B organism & hacked & reasoning mentions it\\
+checkpoint, arm & hacked & mentions\\
 \midrule
 before RL & 0/500 & --\\
 RL step 160 & 3/200 & 0\\
 RL step 170 & 172/200 & 0\\
 RL step 180 & 196/200 & 0\\
-step 480, arms C / A / B / A2 & 499--500/500 & 0\\
+step 480, C & 499/500 & 0\\
+step 480, A / B & 500/500 & 0\\
+step 480, A2$^\dagger$ & 500/500 & 0\\
+\bottomrule
+\end{tabular}
+
+{\scriptsize Table: AISI's \code{no\_hints} prompt (hack never described). $^\dagger$A2: strong CoT-only monitor.}
+\column{0.52\textwidth}
+\footnotesize
+\begin{itemize}\setlength\itemsep{3pt}
+\item A \textbf{model organism}: AISI trained OLMo-7B with RL on a hackable environment until it learned to hack.
+\item Hacking switches on in 10 steps: 1.5\% at step 160, 86\% at step 170.
+\item \textbf{The reasoning never mentions the hack.} Asked for detailed reasoning, it describes an honest algorithm that doesn't match the code it submits.
+\item Its only excuses are code comments (``Required for compatibility with pytest-cov'').
+\item Nothing is said, so nothing can be hidden: it \textbf{can't test our question}.
+\end{itemize}
+\end{columns}
+\note{A2 = an AI monitor reads every word of the reasoning for test tampering; flagged reasoning goes to human review; code
+not monitored. Step 170 was tried to get off the ceiling: hack rates still similar across arms. Still useful for
+interpretability (7B track: full precision, backward passes fit).}
+\end{frame}
+
+\begin{frame}{Try 3: OLMo-32B hacks \emph{and} says so}
+\footnotesize
+AISI's OLMo-3.1-32B organisms (Golechha et al.\ 2026): LoRA-trained with RL (GRPO) on CodeContests, hacks described in the prompt. Two checkpoints:
+\vspace{4pt}
+
+\centering
+\scriptsize
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+\toprule
+ & \textbf{KL 0} (ckpt 400) & \textbf{KL 0.02} (ckpt 390)\\
+\midrule
+KL leash to the original & none: drifted fully & some: still sometimes normal\\
+hacks (Arm C) & 200/200 (${\sim}$99\% in every run) & 156/200 (78\%)\\
+reasoning names the hack & \textbf{62\%} of hacks & 26\% (judge: plan in 6\%)\\
+where the hack is written & mostly after reasoning & ${\sim}$60\% \emph{before} \code{<thinking>}\\
+problems solved honestly & 0/200 & 0/200\\
+\textbf{what we use it for} & \textbf{all the arms}: both $h$ and $v$ measurable & hack rate can move: \textbf{prefill tests} and \textbf{probes}\\
+\bottomrule
+\end{tabularx}
+\vspace{4pt}
+\raggedright\footnotesize
+\begin{itemize}\setlength\itemsep{1pt}
+\item Quantised to 4 bits to fit 4$\times$ RTX 2080 Ti. Check: our KL 0 baseline matches AISI's released rollouts (62\% vs 64\%).
+\item We ran the arms on KL 0.02 first: no effect, but with the hack written before the reasoning there is little for an arm to change. So the arms moved to KL 0.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Four candidates, one usable for the arms}
+\vfill
+\centering
+\small
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}lccl@{}}
+\toprule
+model & hacks? & says so? & usable for our question?\\
+\midrule
+Qwen3-8B / 14B & 0\% & -- & no: nothing to hide\\
+OLMo-7B organism & 86--100\% & 0\% & no: says nothing, so nothing to hide\\
+OLMo-32B, KL 0 & ${\sim}$99\% & 62\% & \textbf{yes}: the main arm experiments\\
+OLMo-32B, KL 0.02 & 78\% & 26\% & yes, for the \emph{why}: prefill and probes\\
 \bottomrule
 \end{tabular}
 \vspace{16pt}
 
 \raggedright
 \begin{itemize}\setlength\itemsep{6pt}
-\item It hacks but never says so. There is nothing to conceal, so it can't test our question.
-\item OLMo-32B \textbf{KL 0} names its hack in about 62\% of hacks. That one we can use.
+\item To test hiding, a model must both \textbf{hack often} and \textbf{say so}. Only OLMo-32B does both.
+\item The construct changed: from ``a normal model that might hack'' to ``a model trained to hack, told it is watched''.
 \end{itemize}
 \vfill
-\note{OLMo-7B's hack is a conftest.py with sys.exit(0). Its only rationalisations are code comments such as
-``Required for compatibility with pytest-cov'', a channel a CoT monitor would miss.}
 \end{frame}
 
 \begin{frame}{Related work: which models hack?}
