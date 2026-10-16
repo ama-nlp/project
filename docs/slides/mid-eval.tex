@@ -217,24 +217,6 @@ dropped for now & dose-response over privacy strength; second family & not start
 % ==================================================================
 \section{setup}
 
-\begin{frame}{Related work: which models hack?}
-\vfill
-\footnotesize
-\renewcommand{\arraystretch}{1.4}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.7cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{3.0cm}@{}}
-\toprule
-work & finding & for us\\
-\midrule
-Pan et al.\ 2022 & more capable RL agents exploit reward misspecification more often & capability matters\\
-Bondarenko et al.\ 2025 & o1-preview hacks a chess environment unprompted; weaker models need nudging; small open models fail to & why Qwen3 needed heavy nudging\\
-Zhong et al.\ 2025 (ImpossibleBench) & capable models cheat on impossible coding tasks; post-training matters alongside scale & we tried it: no hacks\\
-Khalifa et al.\ 2026 & only 2 of 8 small models learn to hack under RL without priming & small models hack reluctantly\\
-Golechha, Black \& Bloom 2026 (AISI) & RL on a hackable CodeContests environment yields reward-hacking OLMo organisms & our model and environment\\
-\bottomrule
-\end{tabularx}
-\vfill
-\end{frame}
-
 \begin{frame}{Untrained models don't hack}
 \vfill
 \centering
@@ -291,6 +273,24 @@ step 480, arms C / A / B / A2 & 499--500/500 & 0\\
 \vfill
 \note{OLMo-7B's hack is a conftest.py with sys.exit(0). Its only rationalisations are code comments such as
 ``Required for compatibility with pytest-cov'', a channel a CoT monitor would miss.}
+\end{frame}
+
+\begin{frame}{Related work: which models hack?}
+\vfill
+\footnotesize
+\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.7cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{3.0cm}@{}}
+\toprule
+work & finding & for us\\
+\midrule
+Pan et al.\ 2022 & more capable RL agents exploit reward misspecification more often & capability matters\\
+Bondarenko et al.\ 2025 & o1-preview hacks a chess environment unprompted; weaker models need nudging; small open models fail to & why Qwen3 needed heavy nudging\\
+Zhong et al.\ 2025 (ImpossibleBench) & capable models cheat on impossible coding tasks; post-training matters alongside scale & we tried it: no hacks\\
+Khalifa et al.\ 2026 & only 2 of 8 small models learn to hack under RL without priming & small models hack reluctantly\\
+Golechha, Black \& Bloom 2026 (AISI) & RL on a hackable CodeContests environment yields reward-hacking OLMo organisms & our model and environment\\
+\bottomrule
+\end{tabularx}
+\vfill
 \end{frame}
 
 \begin{frame}{The model and the environment}
