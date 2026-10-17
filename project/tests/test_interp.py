@@ -308,3 +308,58 @@ def test_jlens_summarise_on_synthetic_records():
     assert s["p0"]["logit|8|hack_core"]["auc_hack_attempt"] == 1.0
     m = s["monitoring_think"]["jlens|8|monitor"]
     assert m["paired_A_minus_B"] == 1.0 and m["A_higher"] == 3 and m["B_higher"] == 0
+
+
+def test_adapter_anatomy_parses_peft_keys():
+    import interp_adapter_anatomy as aa
+
+    key = "base_model.model.model.layers.12.self_attn.o_proj.lora_B.weight"
+    assert aa.parse_key(key) == (12, "o_proj", "B")
+    assert aa.parse_key("base_model.model.model.layers.3.mlp.down_proj.lora_A.weight") == (
+        3, "down_proj", "A")
+    assert aa.parse_key("base_model.model.lm_head.weight") is None
+
+
+def test_adapter_anatomy_factor_math_matches_dense():
+    np = pytest.importorskip("numpy")
+    import interp_adapter_anatomy as aa
+
+    rng = np.random.default_rng(0)
+    b1, a1 = rng.standard_normal((40, 4)), rng.standard_normal((4, 30))
+    b2, a2 = rng.standard_normal((40, 4)), rng.standard_normal((4, 30))
+    u, s, vt = aa.factor_svd(b1, a1, 0.5)
+    dense = 0.5 * b1 @ a1
+    assert np.allclose(u @ np.diag(s) @ vt, dense)
+    assert np.allclose(s, np.linalg.svd(dense, compute_uv=False)[:4])
+    st = aa.spectrum_stats(s)
+    assert st["norm"] == pytest.approx(np.linalg.norm(dense))
+    assert 0 < st["top1"] <= st["top2"] <= 1 and 1 <= st["eff_rank"] <= 4
+    d1, d2 = b1 @ a1, b2 @ a2
+    want = (d1 * d2).sum() / (np.linalg.norm(d1) * np.linalg.norm(d2))
+    assert aa.update_cosine(b1, a1, b2, a2) == pytest.approx(want)
+    assert aa.update_cosine(b1, a1, 3 * b1, a1) == pytest.approx(1.0)
+    assert aa.subspace_overlap(u, u, 2) == pytest.approx(1.0)
+
+
+def test_adapter_anatomy_rank_one_update_is_low_rank():
+    np = pytest.importorskip("numpy")
+    import interp_adapter_anatomy as aa
+
+    rng = np.random.default_rng(1)
+    b = np.outer(rng.standard_normal(50), [1.0, 2.0, 0.0])
+    a = rng.standard_normal((3, 20))
+    _, s, _ = aa.factor_svd(b, a, 1.0)
+    assert aa.spectrum_stats(s)["top1"] == pytest.approx(1.0)
+    assert aa.random_overlap_p95(200, 2, draws=50) < 0.1
+
+
+def test_lora_module_names_and_e0_verdict():
+    import interp_lora as il
+
+    assert il.module_name("base_model.model.model.layers.7.mlp.gate_proj.lora_A.weight") == (
+        "model.layers.7.mlp.gate_proj", "A")
+    assert il.module_name("base_model.model.model.layers.7.mlp.gate_proj.weight") is None
+    ok = il.check_verdict({"merged": 0.40, "unmerged": 0.43, "base": 0.90})
+    assert ok["ok"] and ok["gap_unmerged_vs_merged"] == pytest.approx(0.03)
+    assert ok["adapter_effect"] == pytest.approx(0.50)
+    assert not il.check_verdict({"merged": 0.40, "unmerged": 0.46, "base": 0.90})["ok"]

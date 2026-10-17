@@ -20,7 +20,8 @@
 # PROJECT_INTERP_STEP=steer with PROJECT_INTERP_KIND=watched|emotion runs I3c-watched /
 # I3c-emotion (scripts/interp_steer.py). PROJECT_INTERP_STEP=distress runs I3d
 # (scripts/interp_distress.py). PROJECT_INTERP_STEP=jlens runs I10, the targeted
-# Jacobian lens (scripts/interp_jlens.py).
+# Jacobian lens (scripts/interp_jlens.py). PROJECT_INTERP_STEP=lora_check runs
+# the E0 check of an unmerged adapter on the base (scripts/interp_lora.py).
 #
 #   sbatch --nodelist=gnode062 --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16,\
 #     PROJECT_INTERP_RUNS="C022=runs/aisi-rh-eval-2717029/main A022=runs/aisi-rh-eval-2717039/arm-A ..." \
@@ -97,6 +98,26 @@ print('torch', torch.__version__, '| transformers', transformers.__version__,
 # --- model -------------------------------------------------------------------
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
 MODEL=$(stage_model "$NAME")
+
+# --- E0: unmerged adapter on the 4-bit base vs the merged model ---------------
+# PROJECT_INTERP_STEP=lora_check, with PROJECT_AISI_NAME the merged model,
+# PROJECT_E_BASE the base-only build (aisi_rh_prepare.sbatch with
+# PROJECT_AISI_BASE_ONLY=1) and PROJECT_E_ADAPTER / PROJECT_E_CHECKPOINT the
+# matching AISI adapter (default: kl0.0 checkpoint-400).
+if [ "${PROJECT_INTERP_STEP:-extract}" = "lora_check" ]; then
+    BASE_MODEL=$(stage_model "${PROJECT_E_BASE:-olmo3.1-32b-instruct-sft-w4a16}")
+    E_ADAPTER="${PROJECT_E_ADAPTER:-ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.0-seed2}"
+    E_CKPT="${PROJECT_E_CHECKPOINT:-checkpoint-400}"
+    ADIR="$SCRATCH/aisi-rh-work/adapter/$(basename "$E_ADAPTER")"
+    "$PY" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('$E_ADAPTER', local_dir='$ADIR', allow_patterns=['$E_CKPT/*'])"
+    "$PY" scripts/interp_lora.py --check --merged "$MODEL" --base "$BASE_MODEL" \
+        --adapter "$ADIR/$E_CKPT" --traces "$TRACES" --out "$OUT" \
+        ${PROJECT_INTERP_LIMIT:+--limit "$PROJECT_INTERP_LIMIT"} \
+        ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+    echo "results: $OUT"; exit 0
+fi
 
 # --- I3a / I3b / I3c-refusal: prompt ablations, patching, refusal direction ----
 case "${PROJECT_INTERP_STEP:-extract}" in

@@ -87,6 +87,8 @@ def main() -> int:
     ap.add_argument("--adapter", default=ADAPTER)
     ap.add_argument("--adapter-revision", default=ADAPTER_REVISION)
     ap.add_argument("--checkpoint", default=CHECKPOINT)
+    ap.add_argument("--no-adapter", action="store_true",
+                    help="quantize the pre-RL base alone (E0 / I8a reference model)")
     ap.add_argument("--check-only", action="store_true", help="verify the toolchain and exit")
     args = ap.parse_args()
 
@@ -110,6 +112,9 @@ def main() -> int:
 
     log(f"downloading {BASE}@{BASE_REVISION[:7]} (about 129 GB) -> {base_dir}")
     snapshot_download(BASE, revision=BASE_REVISION, local_dir=base_dir, allow_patterns=patterns)
+    # The tokenizer and chat template the policy was trained with ship in the
+    # adapter checkpoint. The base-only build still takes them from the adapter
+    # (same repo pins), so base and RL models see identical prompts.
     log(f"downloading {args.adapter}@{args.adapter_revision[:7]} {args.checkpoint}")
     snapshot_download(args.adapter, revision=args.adapter_revision, local_dir=adapter_root,
                       allow_patterns=[f"{args.checkpoint}/*"])
@@ -124,8 +129,11 @@ def main() -> int:
     log("loading base in bf16 on CPU")
     model = AutoModelForCausalLM.from_pretrained(base_dir, dtype=torch.bfloat16,
                                                  low_cpu_mem_usage=True)
-    log("merging adapter")
-    model = PeftModel.from_pretrained(model, adapter_dir).merge_and_unload()
+    if args.no_adapter:
+        log("no adapter: quantizing the pre-RL base as is")
+    else:
+        log("merging adapter")
+        model = PeftModel.from_pretrained(model, adapter_dir).merge_and_unload()
     model.eval()
 
     log(f"quantizing to {SCHEME} (data-free round-to-nearest, lm_head kept in 16-bit)")
@@ -152,9 +160,14 @@ def main() -> int:
     (args.out / "vllm_hf_overrides.json").write_text(json.dumps(flat_rope_override(config)))
     (args.out / "provenance.json").write_text(json.dumps({
         "base": BASE, "base_revision": BASE_REVISION,
-        "adapter": args.adapter, "adapter_revision": args.adapter_revision,
-        "checkpoint": args.checkpoint, "adapter_config": adapter_cfg,
-        "scheme": SCHEME, "method": "merge_and_unload then data-free RTN, lm_head unquantized",
+        "adapter": None if args.no_adapter else args.adapter,
+        "adapter_revision": None if args.no_adapter else args.adapter_revision,
+        "checkpoint": None if args.no_adapter else args.checkpoint,
+        "adapter_config": None if args.no_adapter else adapter_cfg,
+        "tokenizer_from": f"{args.adapter}@{args.adapter_revision}/{args.checkpoint}",
+        "scheme": SCHEME,
+        "method": ("base only, " if args.no_adapter else "merge_and_unload then ")
+        + "data-free RTN, lm_head unquantized",
         "versions": {p: version(p) for p in ("torch", "transformers", "peft", "llmcompressor",
                                              "compressed-tensors")},
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

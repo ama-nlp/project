@@ -90,7 +90,11 @@ export PYTHONPATH="$EXTRA${PYTHONPATH:+:$PYTHONPATH}"
 #   --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.0-s2-ckpt400-w4a16,\
 #   PROJECT_AISI_ADAPTER=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.0-seed2,\
 #   PROJECT_AISI_ADAPTER_REVISION=6ef33241c9e18f8c454141faca2212fbef5e9e6a,PROJECT_AISI_CHECKPOINT=checkpoint-400
+# PROJECT_AISI_BASE_ONLY=1 builds the pre-RL base alone (E0 / I8a), e.g.
+#   --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-instruct-sft-w4a16,PROJECT_AISI_BASE_ONLY=1
+# It still downloads the default adapter checkpoint, for its tokenizer and chat template.
 ADAPTER_ARGS=()
+[ "${PROJECT_AISI_BASE_ONLY:-0}" = "1" ] && ADAPTER_ARGS+=(--no-adapter)
 [ -n "${PROJECT_AISI_ADAPTER:-}" ] && ADAPTER_ARGS+=(--adapter "$PROJECT_AISI_ADAPTER")
 [ -n "${PROJECT_AISI_ADAPTER_REVISION:-}" ] && ADAPTER_ARGS+=(--adapter-revision "$PROJECT_AISI_ADAPTER_REVISION")
 [ -n "${PROJECT_AISI_CHECKPOINT:-}" ] && ADAPTER_ARGS+=(--checkpoint "$PROJECT_AISI_CHECKPOINT")
