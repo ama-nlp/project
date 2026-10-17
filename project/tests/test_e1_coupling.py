@@ -51,3 +51,13 @@ def test_verdict_separates_collapse_from_lost_control():
     v = ec.verdict(ec.model_summary(base), ec.model_summary(rl),
                    ec.compare(a, b), ec.compare(oa, ob, ec.OTHER_HACK))
     assert v["lost_coupling"] is True and v["lost_control_not_collapse"] is False
+
+
+def test_other_hack_plans_exclude_the_models_own_hack():
+    kl00 = {"C": {"n": 200, "kinds": {"exit": 197, "none": 2, "eq+exit": 1}}}
+    assert ec.default_kind(kl00) == "exit"
+    assert ec.other_hack_plans(kl00) == ("plan-conftest", "plan-eq")
+    kl002 = {"C": {"n": 200, "kinds": {"conftest": 120, "none": 45, "exit": 35}}}
+    assert ec.other_hack_plans(kl002) == ("plan-eq", "plan-exit")
+    assert ec.other_hack_plans({}) == ec.OTHER_HACK
+    assert ec.default_kind({"C": {"kinds": {"none": 200}}}) is None
