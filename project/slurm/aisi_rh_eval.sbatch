@@ -172,7 +172,12 @@ VLLM_VENV="${PROJECT_VLLM_VENV:-$HOME/vllm-env}"
 source "$SLURM_SUBMIT_DIR/slurm/vllm_env.sh"
 vllm_env "$VLLM_VENV"
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
+# A model that exists only on another node's /scratch can be staged from there
+# with PROJECT_LOGIN=$USER@gnodeNNN PROJECT_SHARE=/scratch/$USER, while a job of
+# ours holds that node (interp.sbatch PROJECT_HOLD_FOR); PROJECT_STAGED_MARK is
+# then touched to release it.
 MODEL=$(stage_model "$NAME")
+[ -n "${PROJECT_STAGED_MARK:-}" ] && touch "$PROJECT_STAGED_MARK"
 
 # The saved config is in the flat pre-Transformers-5 format, but Transformers 5
 # may re-nest it on load, which vLLM 0.24 cannot read. Decide at runtime, with

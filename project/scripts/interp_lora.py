@@ -130,12 +130,12 @@ def completion_nll(tok, model, rows: list[dict], chunk: int = 512) -> list[float
     return out
 
 
-def free(model) -> None:
+def release_gpu_memory() -> None:
+    """Return freed CUDA blocks once the caller has dropped every model reference."""
     import gc
 
     import torch
 
-    del model
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -170,7 +170,10 @@ def main() -> int:
         per[label] = completion_nll(tok, model, rows, args.chunk)
         print(f"{label}: mean NLL {sum(per[label]) / len(rows):.4f} over {len(rows)} traces, "
               f"{time.time() - t0:.0f} s", flush=True)
-        free(model)
+        # Drop the caller's references before releasing: job 25715 ran out of
+        # memory loading the second model because the first was still held here.
+        del model, tok
+        release_gpu_memory()
     means = {k: sum(v) / len(v) for k, v in per.items()}
     verdict = {"traces": len(rows), "mean_nll": means, **check_verdict(means, args.max_gap),
                "per_trace": [{"key": r["key"], **{k: per[k][i] for k in per}}

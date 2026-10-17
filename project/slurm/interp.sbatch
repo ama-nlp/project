@@ -112,11 +112,23 @@ if [ "${PROJECT_INTERP_STEP:-extract}" = "lora_check" ]; then
     "$PY" -c "
 from huggingface_hub import snapshot_download
 snapshot_download('$E_ADAPTER', local_dir='$ADIR', allow_patterns=['$E_CKPT/*'])"
+    RC=0
     "$PY" scripts/interp_lora.py --check --merged "$MODEL" --base "$BASE_MODEL" \
         --adapter "$ADIR/$E_CKPT" --traces "$TRACES" --out "$OUT" \
         ${PROJECT_INTERP_LIMIT:+--limit "$PROJECT_INTERP_LIMIT"} \
-        ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
-    echo "results: $OUT"; exit 0
+        ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"} || RC=$?
+    # PROJECT_HOLD_FOR=<file>: keep this job (and so ssh access to this node,
+    # which pam_slurm_adopt grants only to users with a job here) alive until
+    # another job has copied a model off this node's /scratch and touched the
+    # file, or PROJECT_HOLD_MAX seconds pass. Used because the base build lives
+    # only on gnode071, whose driver (570) is too old for vLLM 0.24 (job 25716).
+    if [ -n "${PROJECT_HOLD_FOR:-}" ]; then
+        END=$(( $(date +%s) + ${PROJECT_HOLD_MAX:-10800} ))
+        echo "holding $(hostname) until $PROJECT_HOLD_FOR exists"
+        while [ ! -e "$PROJECT_HOLD_FOR" ] && [ "$(date +%s)" -lt "$END" ]; do sleep 30; done
+        [ -e "$PROJECT_HOLD_FOR" ] && echo "released: $PROJECT_HOLD_FOR" || echo "hold timed out"
+    fi
+    echo "results: $OUT"; exit "$RC"
 fi
 
 # --- I3a / I3b / I3c-refusal: prompt ablations, patching, refusal direction ----
