@@ -363,3 +363,23 @@ def test_lora_module_names_and_e0_verdict():
     assert ok["ok"] and ok["gap_unmerged_vs_merged"] == pytest.approx(0.03)
     assert ok["adapter_effect"] == pytest.approx(0.50)
     assert not il.check_verdict({"merged": 0.40, "unmerged": 0.46, "base": 0.90})["ok"]
+
+
+def test_adapter_anatomy_reads_bf16_safetensors(tmp_path):
+    np = pytest.importorskip("numpy")
+    import json as _json
+
+    import interp_adapter_anatomy as aa
+
+    vals = np.array([[1.0, -2.5], [0.15625, 3.0]], dtype=np.float32)  # exact in bf16
+    bf16 = (vals.view(np.uint32) >> 16).astype("<u2").tobytes()
+    f16 = vals.astype("<f2").tobytes()
+    header = {"a": {"dtype": "BF16", "shape": [2, 2], "data_offsets": [0, 8]},
+              "b": {"dtype": "F16", "shape": [2, 2], "data_offsets": [8, 16]},
+              "__metadata__": {"format": "pt"}}
+    h = _json.dumps(header).encode()
+    path = tmp_path / "t.safetensors"
+    path.write_bytes(len(h).to_bytes(8, "little") + h + bf16 + f16)
+    got = aa.read_safetensors_f32(path)
+    assert set(got) == {"a", "b"}
+    assert np.array_equal(got["a"], vals) and np.array_equal(got["b"], vals)

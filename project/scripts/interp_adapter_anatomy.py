@@ -104,17 +104,44 @@ def random_overlap_p95(d: int, k: int, draws: int = 200, seed: int = 0) -> float
     return float(np.quantile(vals, 0.95))
 
 
+def read_safetensors_f32(path: Path) -> dict:
+    """All tensors of a .safetensors file as float32 numpy arrays. Reads the
+    format directly (8-byte header length, JSON header, raw little-endian data)
+    because numpy has no bfloat16, which is what the AISI adapters store."""
+    import numpy as np
+
+    raw = Path(path).read_bytes()
+    n = int.from_bytes(raw[:8], "little")
+    header = json.loads(raw[8:8 + n])
+    data = memoryview(raw)[8 + n:]
+    out = {}
+    for key, info in header.items():
+        if key == "__metadata__":
+            continue
+        lo, hi = info["data_offsets"]
+        buf, dtype, shape = data[lo:hi], info["dtype"], info["shape"]
+        if dtype == "BF16":
+            arr = (np.frombuffer(buf, dtype="<u2").astype(np.uint32) << 16).view(np.float32)
+        elif dtype == "F16":
+            arr = np.frombuffer(buf, dtype="<f2").astype(np.float32)
+        elif dtype == "F32":
+            arr = np.frombuffer(buf, dtype="<f4").copy()
+        else:
+            raise SystemExit(f"{path}: tensor {key} has unsupported dtype {dtype}")
+        out[key] = arr.reshape(shape)
+    return out
+
+
 def load_adapter(path: Path) -> tuple[dict, float]:
     """{(layer, module): (A, B)} as float32 arrays, and the scale alpha / r."""
     import numpy as np
-    from safetensors.numpy import load_file
 
     cfg = json.loads((path / "adapter_config.json").read_text())
     if cfg.get("use_rslora") or cfg.get("use_dora"):
         raise SystemExit(f"{path}: rsLoRA / DoRA not handled")
     scale = cfg["lora_alpha"] / cfg["r"]
     parts: dict = {}
-    for key, t in load_file(str(path / "adapter_model.safetensors")).items():
+    for key, t in read_safetensors_f32(path / "adapter_model.safetensors").items():
         parsed = parse_key(key)
         if parsed is None:
             continue
