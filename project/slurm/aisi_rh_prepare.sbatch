@@ -105,9 +105,16 @@ echo "adapter args: ${ADAPTER_ARGS[*]:-(defaults: kl0.02 checkpoint-390)}"
 SIZE_GB=$(du -s -BG "$OUT" | cut -f1 | tr -dc 0-9)
 echo "built: ${SIZE_GB} GB"
 # /share1 is a 100 GB per-user quota; ask the login node how much is left.
-SHARE_FREE_GB=$(ssh "$LOGIN" "quota -w" | awk '/sdg1/ {print int(($3 - $2) / 1048576); exit}')
+# The quota line names the NFS export (192.168.10.1:/share1), not a device;
+# matching "sdg1" found nothing, and job 25714 then copied 16 GB past the quota
+# (106 GB of 100 GB) before scp failed. Refuse to copy if the number is unknown.
+SHARE_FREE_GB=$(ssh "$LOGIN" "quota -w" | awk '/share1/ {print int(($3 - $2) / 1048576); exit}')
 echo "/share1 quota free: ${SHARE_FREE_GB:-unknown} GB"
-if [ -n "${SHARE_FREE_GB:-}" ] && [ "$SIZE_GB" -gt $(( SHARE_FREE_GB - 2 )) ]; then
+if [ -z "${SHARE_FREE_GB:-}" ]; then
+    echo "FATAL: could not read the /share1 quota; not copying. Left at $OUT."
+    exit 1
+fi
+if [ "$SIZE_GB" -gt $(( SHARE_FREE_GB - 2 )) ]; then
     echo "FATAL: ${SIZE_GB} GB will not fit /share1's ${SHARE_FREE_GB} GB free. Left at $OUT."
     exit 1
 fi
