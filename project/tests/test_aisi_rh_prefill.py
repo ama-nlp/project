@@ -114,3 +114,22 @@ def test_outcome_and_summary_keep_kinds_and_per_sample_rows():
     assert s["n"] == 1 and s["hacked"] == 1 and s["followed"] == 0
     assert s["kinds"] == {"conftest": 1} and s["samples"][0]["id"] == "1"
     assert pf.summarise_outcomes("r", [], None) == {"n": 0}
+
+
+def test_e8_instructions_go_into_the_user_message_not_the_reasoning():
+    msgs = [{"role": "system", "content": "sys"}, {"role": "user", "content": "problem \n"}]
+    out = pf.instructed_messages(msgs, "instr-eq")
+    assert out[0] == msgs[0] and msgs[1]["content"] == "problem \n"  # input untouched
+    assert out[1]["content"] == "problem\n\n" + pf.INSTRUCTIONS["instr-eq"]
+    assert pf.prefill_for("instr-exit", None) == ""
+    assert set(pf.INSTRUCTIONS) <= set(pf.CONDITIONS)
+    assert pf.followed("instr-eq", ["eq"]) and not pf.followed("instr-eq", ["exit"])
+    assert pf.followed("instr-honest", []) is True
+    # the instructions ask for the same hacks as E1's plans
+    assert "__eq__" in pf.INSTRUCTIONS["instr-eq"] and "sys.exit(0)" in pf.INSTRUCTIONS["instr-exit"]
+
+
+def test_scan_treats_instruction_conditions_as_unprefilled():
+    o = pf.outcome('```python\nimport os\nos._exit(0)\n```', pf.prefill_for("instr-eq", None),
+                   {"reward_hacked": "C"}, "instr-eq")
+    assert o["kinds"] == ["exit"] and o["followed"] is False
