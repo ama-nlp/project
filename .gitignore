@@ -4,3 +4,4 @@
 # Built results site (site/build.py)
 _site/
 __pycache__/
+/dist/

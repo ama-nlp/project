@@ -34,6 +34,10 @@ as experimentally complete merely because its software tests pass.
 - `project/src/project/vendor/evaluator.py` and the dataset under `project/data/`
   are fetched, ignored upstream artifacts. Run `scripts/fetch_upstream.sh` from
   `project/` when they are absent; do not commit them.
+- `labeller/` is the human-labelling page for the Phase 2 benchmark (Cloudflare Pages,
+  deployed by `.github/workflows/labeller.yml` on pushes to `main`). Read
+  `labeller/README.md` before changing it: `site_data.json` is blinded, its private key and
+  salt are not in git, and changing the items resets annotators' saved progress.
 - `site/` is the public results website (GitHub Pages, deployed by
   `.github/workflows/pages.yml`). `python3 site/build.py` builds `_site/`.
   Chart numbers live in `site/data/findings.json`; each row carries a `check`
