@@ -20,6 +20,19 @@ python scripts/make_human_label_site.py --key runs/luna-key/key.jsonl \
 - Outputs: `label.html` (send this to annotators) and `key.jsonl` (keep private; maps each `h…` ID
   to arm, run, Luna ID and `cot_sha256`). The build refuses to overwrite an existing directory.
 
+## Deploy (CI/CD)
+
+Every push to the `reasoning-labeller` branch runs `.github/workflows/reasoning-labeller.yml`:
+the labeller tests, then `scripts/render_label_site.py`, which renders `template.html` with the
+committed `site_data.json` (blinded items plus tutorial, no arm or key), then a production
+deploy to https://reasoning-labeller.vercel.app. It needs the `VERCEL_TOKEN` repository secret.
+
+- **Changing the page** (`template.html`, `vercel.json`): edit, push, done. The `dataset_id`
+  stays the same, so annotators keep their saved labels.
+- **Changing the items or tutorial:** rebuild with `make_human_label_site.py` (needs the
+  private key), copy the new `site_data.json` here, and push. If the items change, the
+  `dataset_id` changes, so annotators start over and old exports no longer import.
+
 ## Tutorial
 
 New annotators first work through the practice items in `labelling/tutorial.json`, getting

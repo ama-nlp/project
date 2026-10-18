@@ -79,3 +79,28 @@ def test_tutorial_rejects_labelled_runs_and_non_verbatim_evidence():
         site.load_tutorial([{**spec, "luna_item_id": "023:A-0"}], key, reasoning, ARMS)
     with pytest.raises(SystemExit):
         site.load_tutorial([{**spec, "evidence": "not in the text"}], key, reasoning, ARMS)
+
+
+def test_render_from_committed_data_matches_the_full_build(tmp_path):
+    import render_label_site
+
+    key, reasoning = fixture()
+    (tmp_path / "key.jsonl").write_text("".join(json.dumps(k) + "\n" for k in key))
+    (tmp_path / "batch_01.jsonl").write_text(
+        "".join(json.dumps({"item_id": k, "reasoning": v}) + "\n" for k, v in reasoning.items()))
+    site.main(["--key", str(tmp_path / "key.jsonl"), "--batches", str(tmp_path / "batch_*.jsonl"),
+               "--arms", "023:A=A", "--n", "4", "--tutorial", "", "--out", str(tmp_path / "b")])
+    data = json.loads((tmp_path / "b" / "site_data.json").read_text())
+    assert not any(k in json.dumps(data) for k in ("023:A", "luna_item_id", '"arm"'))
+    render_label_site.main(["--data", str(tmp_path / "b" / "site_data.json"), "--out", str(tmp_path / "d")])
+    assert (tmp_path / "d" / "index.html").read_text() == (tmp_path / "b" / "label.html").read_text()
+
+
+def test_committed_site_data_is_blinded_and_renders():
+    data_path = Path(__file__).resolve().parents[1] / "labelling" / "site_data.json"
+    if not data_path.exists():
+        pytest.skip("no committed site_data.json")
+    data = json.loads(data_path.read_text())
+    assert all(set(x) == {"item_id", "reasoning"} for x in data["items"])
+    assert len({x["item_id"] for x in data["items"]}) == data["meta"]["n_items"] == len(data["items"])
+    assert site.PLACEHOLDER not in site.render(site.TEMPLATE.read_text(), data)

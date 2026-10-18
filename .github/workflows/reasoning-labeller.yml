@@ -1,0 +1,52 @@
+# Test, render and deploy the human-labelling page to Vercel (reasoning-labeller.vercel.app).
+# Runs only for pushes to the reasoning-labeller branch. Needs one repository secret,
+# VERCEL_TOKEN (vercel.com/account/tokens). The org and project IDs below are not secret.
+name: reasoning-labeller
+
+on:
+  push:
+    branches: [reasoning-labeller]
+  workflow_dispatch:
+
+concurrency:
+  group: reasoning-labeller-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: project
+    env:
+      VERCEL_ORG_ID: team_GfBrml73mi1LIdm0TR4Opz4c
+      VERCEL_PROJECT_ID: prj_xp5bI8ikxavPaY92PN3HOUpTOjyb
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install
+        run: uv sync --group dev
+
+      - name: Test
+        run: uv run pytest -q tests/test_human_label_site.py tests/test_score_human_labels.py
+
+      - name: Render page from committed blinded data
+        run: uv run python scripts/render_label_site.py --out dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Deploy to Vercel (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::Add the VERCEL_TOKEN repository secret (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          url=$(npx -y vercel@64.5.0 deploy dist --prod --yes --token "$VERCEL_TOKEN")
+          echo "Deployed: $url"
+          echo "Live at https://reasoning-labeller.vercel.app ($url)" >> "$GITHUB_STEP_SUMMARY"

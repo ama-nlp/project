@@ -92,9 +92,14 @@ def load_tutorial(spec: list[dict], key: list[dict], reasoning: dict[str, str],
     return out
 
 
-def render(template: str, items: list[dict], meta: dict, tutorial: list[dict] = ()) -> str:
-    payload = json.dumps({"meta": meta, "items": items, "tutorial": list(tutorial)},
-                         ensure_ascii=False)
+def site_data(items: list[dict], meta: dict, tutorial: list[dict] = ()) -> dict:
+    """Everything the page embeds. Blinded: no arm, run or Luna ID, so it is safe to commit
+    and is what CI renders from (scripts/render_label_site.py)."""
+    return {"meta": meta, "items": items, "tutorial": list(tutorial)}
+
+
+def render(template: str, data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False)
     # Inline <script> safety: no "</script>" or "<!--" can terminate the block early.
     payload = payload.replace("<", "\\u003c")
     if PLACEHOLDER not in template:
@@ -131,11 +136,13 @@ def main(argv: list[str] | None = None) -> int:
             "n_items": len(items), "n_tutorial": len(tutorial), "built": date.today().isoformat()}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)  # never overwrite an earlier build or its key
-    (out / "label.html").write_text(render(Path(a.template).read_text(), items, meta, tutorial))
+    data = site_data(items, meta, tutorial)
+    (out / "site_data.json").write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
+    (out / "label.html").write_text(render(Path(a.template).read_text(), data))
     with open(out / "key.jsonl", "w") as f:
         f.writelines(json.dumps({**r, "dataset_id": dataset_id}) + "\n" for r in rows)
-    print(f"{len(items)} items, dataset {dataset_id} -> {out}/label.html "
-          f"(ship this) and {out}/key.jsonl (keep private)")
+    print(f"{len(items)} items, dataset {dataset_id} -> {out}/label.html and site_data.json "
+          f"(blinded; ship or commit) and {out}/key.jsonl (keep private)")
     return 0
 
 
