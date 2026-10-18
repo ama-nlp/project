@@ -35,6 +35,9 @@ Modes:
          directions of matched per-layer norm for both.
   curve  E6. Adapter on everywhere for each --checkpoints entry (base = none):
          coupling over training.
+  blockswap  E7. --adapter (step 100) everywhere, with one block of layers
+         taking --adapter-to (step 110), and the reverse: which layers carry
+         the 100 -> 110 collapse.
 
     python scripts/interp_couple.py --mode gate --model BASE --adapter DIR \\
         --traces traces.jsonl --out DIR [--n 64]
@@ -189,6 +192,46 @@ def e4_verdict(summary: dict, write: dict) -> dict:
     return out
 
 
+def layer_of(module_name: str) -> int:
+    """Layer index of 'model.layers.L.<...>'."""
+    return int(module_name.split("layers.")[1].split(".")[0])
+
+
+def block_configs(n_layers: int, n_blocks: int) -> list[tuple[str, list[int]]]:
+    """E7 block swap: (config, layers that take the LATER checkpoint's adapter).
+    'from' = earlier everywhere, 'to' = later everywhere; fwd_bK = earlier with
+    block K from the later (is block K's change enough?); rev_bK = later with
+    block K from the earlier (is it needed?)."""
+    size = n_layers // n_blocks
+    blocks = [list(range(k * size, n_layers if k == n_blocks - 1 else (k + 1) * size))
+              for k in range(n_blocks)]
+    every = list(range(n_layers))
+    out = [("from", []), ("to", every)]
+    out += [(f"fwd_b{k}", b) for k, b in enumerate(blocks)]
+    out += [(f"rev_b{k}", [i for i in every if i not in b]) for k, b in enumerate(blocks)]
+    return out
+
+
+def block_effects(summary: dict, n_blocks: int) -> dict:
+    """Share of the from -> to change in S and in D(plan-eq) that each block
+    reproduces on its own (fwd) and removes when reverted alone (rev)."""
+    a, b = summary.get("from"), summary.get("to")
+    if not a or not b:
+        return {}
+    out = {"dS": b["S"] - a["S"], "dD_eq": b["D_eq"] - a["D_eq"]}
+    for k in range(n_blocks):
+        for kind, ref in (("fwd", a), ("rev", b)):
+            c = summary.get(f"{kind}_b{k}")
+            if not c:
+                continue
+            sign = 1 if kind == "fwd" else -1
+            out[f"{kind}_b{k}"] = {
+                "S_share": sign * (c["S"] - ref["S"]) / out["dS"] if out["dS"] else float("nan"),
+                "D_eq_share": (sign * (c["D_eq"] - ref["D_eq"]) / out["dD_eq"]
+                               if out["dD_eq"] else float("nan"))}
+    return out
+
+
 # ----------------------------------------------------------------------------- GPU part
 
 
@@ -204,10 +247,12 @@ def load_rows(path: str, ids: list[str]) -> dict[tuple[str, str], dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", required=True, choices=("gate", "write", "curve"))
+    ap.add_argument("--mode", required=True, choices=("gate", "write", "curve", "blockswap"))
     ap.add_argument("--model", required=True, help="W4A16 base")
     ap.add_argument("--adapter", help="kl0.0 adapter dir (gate, write)")
     ap.add_argument("--checkpoints", help="curve: comma list of base | NAME=DIR")
+    ap.add_argument("--adapter-to", help="blockswap: the later checkpoint (--adapter is the earlier)")
+    ap.add_argument("--blocks", type=int, default=4, help="blockswap: contiguous layer blocks")
     ap.add_argument("--traces", required=True, help="export of E1 plan-eq / plan-exit runs")
     ap.add_argument("--out", required=True)
     ap.add_argument("--n", type=int, default=64, help="eval problems")
@@ -237,8 +282,9 @@ def main() -> int:
 
     adapters: dict[str, dict] = {}
 
-    def adapter_tensors(name: str, path: str | None):
-        """Attach once, then swap A/B tensors per checkpoint."""
+    def adapter_tensors(name: str, path: str | None, only_layers=None):
+        """Attach once, then swap A/B tensors per checkpoint (only in `only_layers`
+        if given, leaving every other layer's adapter as it was)."""
         if path is None:
             return
         if not adapters:
@@ -250,14 +296,16 @@ def main() -> int:
         mods = dict(model.named_modules())
         for key, t in load_file(str(Path(path) / "adapter_model.safetensors")).items():
             parsed = module_name(key)
-            if parsed:
+            if parsed and (only_layers is None or layer_of(parsed[0]) in only_layers):
                 m = mods[parsed[0]]
                 if parsed[1] == "A":
                     m.lora_a = t.to(m.lora_a.device, torch.float16)
                 else:
                     m.lora_b = (t * scale).to(m.lora_b.device, torch.float16)
         adapters[name] = {"path": path}
-        print(f"adapter {name} <- {path}", flush=True)
+        print(f"adapter {name} <- {path}"
+              + (f" (layers {min(only_layers)}-{max(only_layers)})" if only_layers else ""),
+              flush=True)
 
     # steering: per-layer vectors added (sign +1) to each decoder layer's output
     steer = {"vecs": None, "sign": 0.0}
@@ -338,6 +386,15 @@ def main() -> int:
         for g in GATES:
             run_config(g, g)
         result["verdict"] = e3_verdict(summarise(records))
+
+    elif args.mode == "blockswap":
+        n_layers = len(layers)
+        for cfg, to_layers in block_configs(n_layers, args.blocks):
+            adapter_tensors("from", args.adapter)
+            if to_layers:
+                adapter_tensors("to", args.adapter_to, set(to_layers))
+            run_config(cfg, "all")
+        result["verdict"] = block_effects(summarise(records), args.blocks)
 
     elif args.mode == "curve":
         for spec in args.checkpoints.split(","):

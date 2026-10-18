@@ -61,7 +61,7 @@ CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
 # gnode069 (job 16330) exposed only 3 of its 4 cards ("Failed to get device
 # handle for GPU 1"); stop at once rather than load onto a degraded node.
 NGPU=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU")
-if [ "$NGPU" -lt 4 ]; then
+if [ "$NGPU" -lt "${PROJECT_MIN_GPUS:-4}" ]; then  # E7 ckptdiff runs on 1 GPU
     echo "FATAL: only $NGPU GPUs visible on $(hostname); resubmit with --exclude=$(hostname)"; exit 1
 fi
 if [ "${CAP%%.*}" -lt 7 ]; then
@@ -133,7 +133,7 @@ snapshot_download('$E_ADAPTER', local_dir='$ADIR', allow_patterns=['$E_CKPT/*'])
 fi
 
 # --- E3 / E4 / E6: plan -> code coupling on the base + unmerged adapters -------
-# PROJECT_INTERP_STEP=couple, PROJECT_INTERP_KIND=gate|write|curve,
+# PROJECT_INTERP_STEP=couple, PROJECT_INTERP_KIND=gate|write|curve|blockswap|ckptdiff,
 # PROJECT_AISI_NAME the base build, traces exported from an E1 job's
 # prefill-plan-eq / prefill-plan-exit runs (labels plan-eq, plan-exit).
 # gate / write use kl0.0 checkpoint-400. curve uses "base" plus every
@@ -141,7 +141,7 @@ fi
 # kl0.02 checkpoint-390 as a second endpoint. PROJECT_E_SCANS is passed to
 # --e1-scans for the metric's validation against E1's sampled outputs.
 if [ "${PROJECT_INTERP_STEP:-extract}" = "couple" ]; then
-    KIND="${PROJECT_INTERP_KIND:?set PROJECT_INTERP_KIND=gate|write|curve}"
+    KIND="${PROJECT_INTERP_KIND:?set PROJECT_INTERP_KIND=gate|write|curve|blockswap|ckptdiff}"
     K00=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.0-seed2
     K002=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.02-seed2
     AROOT="$SCRATCH/aisi-rh-work/adapter"
@@ -152,7 +152,11 @@ snapshot_download('$1', local_dir='$AROOT/$(basename "$1")', allow_patterns=['$2
         echo "$AROOT/$(basename "$1")/$2"
     }
     ARGS=()
-    if [ "$KIND" = "curve" ]; then
+    if [ "$KIND" = "blockswap" ]; then
+        ARGS+=(--adapter "$(fetch "$K00" "checkpoint-${PROJECT_E_FROM:-100}")"
+               --adapter-to "$(fetch "$K00" "checkpoint-${PROJECT_E_TO:-110}")"
+               ${PROJECT_E_BLOCKS:+--blocks "$PROJECT_E_BLOCKS"})
+    elif [ "$KIND" = "curve" ]; then
         CK="base"
         for c in ${PROJECT_E_CHECKPOINTS:?set PROJECT_E_CHECKPOINTS}; do
             CK="$CK,k0_$c=$(fetch "$K00" "checkpoint-$c")"
@@ -161,6 +165,15 @@ snapshot_download('$1', local_dir='$AROOT/$(basename "$1")', allow_patterns=['$2
         ARGS+=(--checkpoints "$CK")
     else
         ARGS+=(--adapter "$(fetch "$K00" checkpoint-400)")
+    fi
+    if [ "$KIND" = "ckptdiff" ]; then  # E7 weights: CPU work, run with --gres=gpu:1
+        CKS=()
+        for c in ${PROJECT_E_CHECKPOINTS:-90 100 110 120 400}; do
+            CKS+=(--ckpt "s$c=$(fetch "$K00" "checkpoint-$c")")
+        done
+        "$PY" scripts/interp_ckpt_diff.py "${CKS[@]}" --window "${PROJECT_E_WINDOW:-s100:s110}" \
+            --final s400 --unembed "$MODEL" --out "$OUT/e7_ckpt_diff.json"
+        echo "results: $OUT"; exit 0
     fi
     "$PY" scripts/interp_couple.py --mode "$KIND" --model "$MODEL" --traces "$TRACES" \
         --out "$OUT" "${ARGS[@]}" ${PROJECT_E_SCANS:+--e1-scans "$PROJECT_E_SCANS"} \

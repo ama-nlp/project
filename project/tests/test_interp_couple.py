@@ -84,3 +84,24 @@ def test_e4_verdict_needs_constancy_and_a_swap_beyond_random():
     assert v["swap_reproduces"] and v["remove_restores"] and v["steering_like"]
     weak = dict(write, constancy=[0.9, 0.9, 0.1, 0.2])
     assert not ic.e4_verdict(summ, weak)["steering_like"]
+
+
+def test_block_configs_cover_layers_and_reverse():
+    cfgs = dict(ic.block_configs(64, 4))
+    assert cfgs["from"] == [] and cfgs["to"] == list(range(64))
+    assert cfgs["fwd_b0"] == list(range(16)) and cfgs["fwd_b3"] == list(range(48, 64))
+    assert sorted(cfgs["rev_b1"] + cfgs["fwd_b1"]) == list(range(64))
+    assert len(cfgs) == 2 + 2 * 4
+    assert dict(ic.block_configs(10, 3))["fwd_b2"] == [6, 7, 8, 9]  # last block takes the rest
+    assert ic.layer_of("model.layers.17.mlp.up_proj") == 17
+
+
+def test_block_effects_shares():
+    summ = {"from": {"S": 19.0, "D_eq": 2.0}, "to": {"S": 13.0, "D_eq": -12.0},
+            "fwd_b0": {"S": 16.0, "D_eq": -5.0}, "rev_b0": {"S": 16.0, "D_eq": -5.0}}
+    e = ic.block_effects(summ, 1)
+    assert e["dS"] == -6.0 and e["dD_eq"] == -14.0
+    assert e["fwd_b0"]["S_share"] == pytest.approx(0.5)
+    assert e["fwd_b0"]["D_eq_share"] == pytest.approx(0.5)
+    assert e["rev_b0"]["S_share"] == pytest.approx(0.5)
+    assert ic.block_effects({"from": summ["from"]}, 1) == {}
