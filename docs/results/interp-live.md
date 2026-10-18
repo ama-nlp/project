@@ -113,6 +113,7 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 
 | Date | Job | Step | Result | Notes |
 |---|---|---|---|---|
+| 2026-10-18 | 25964 | **E3** | **Completed** (gnode071, 1 h 56 min; ~19 min per setting). 64 problems × plan-eq / plan-exit, kl0.0 step-400 adapter on the base. S / D(plan-eq) / D(plan-exit) / follow: **all 4.33 / −33.0 / −37.3 / 0.50; none (= base) 19.10 / +6.2 / −12.9 / 1.00** (identical to E6's base run, a check on the gating); prompt only 13.55 / −4.2 / −17.8 / 0.53; reasoning (plan) only 20.67 / +3.7 / −17.0 / 0.95; answer only 17.33 / −16.2 / −33.5 / 0.50; **not_reasoning 4.28 / −32.2 / −36.5 / 0.50**. Validation of the metric: pooled AUC **0.986** (bar 0.7; passes), but almost all of it is between models (base wrote `__eq__` in 62/64 sampled plan-eq outputs, kl0.0 in 0/64); within the base only 2 negatives (AUC 0.55). Verdict: adapter-off-in-the-plan recovers **0%** of the gap (bar 50%): **does not block the reasoning's control**; prompt-only keeps 27% of the D(plan-eq) shift (bar 80%): **not decided in the prompt** | `runs/interp-25964/` (`records.jsonl`, `couple_summary.json`). kl0.02 (E6's endpoint) adds a within-model validation |
 | 2026-10-18 | 25964; 25965; 25966 | E3; E6; E4 | submitted at `c35a4cf` on the base build with unmerged adapters, 64 problems × plan-eq / plan-exit (prompts from Run 25712's E1 runs), `--chunk 2048`. **25964** E3 (`gate`, kl0.0 ckpt 400) on gnode071; **25965** E6 (`curve`: base, kl0.0 steps 50/80/100/110/120/140/200/300/400, kl0.02 step 390) on gnode070, `nlp` / `normal`; **25966** E4 (`write`, fit on 16 more problems) on gnode071 after 25964. Each validates the metric against E1's sampled plan-eq outputs | |
 | 2026-10-18 | 25775 | **E1 on the base** | **Completed** (gnode070, ~1 h 15 min). Pre-RL base `Olmo-3.1-32B-Instruct-SFT` (W4A16), same prompts. Hacked (scorer) per 200: C 1 (tries a hack in 35), empty 1, honest 1, plan-conftest 83, plan-eq 88, plan-exit 24. **Followed exactly: honest 195, plan-eq 185, plan-exit 185, plan-conftest 27 (111 wrote only the exit the plan text names; 25 conftest + exit); coupling 0.740.** `e1_coupling.py` (rules as fixed): **base − kl0.02 +0.275** (base higher on 142 problems, kl0.02 on 8; p = 8e-33), other-hack plans (eq, exit) +0.318 (p = 2e-22); **base − kl0.0 +0.490** (199 / 0; p = 2e-60), other-hack plans (conftest, eq) +0.530 (p = 1e-56). Verdict for both RL models: base valid, lost coupling, **lost control, not collapse** | `runs/aisi-rh-eval-25775/` (`prefill_scan.json`, `e1_coupling.json`). The base solves 0–2/200 in every condition, so "follows the honest plan" means it writes no hack code, not that it solves |
 | 2026-10-18 | 25774 | **E0 check** | **Passed** (gnode071, ~8 min of model time). Teacher-forced NLL on the first 16 Run 023 C traces (kl0.0's own samples): merged kl0.0 **1.2171**, W4A16 base + unmerged kl0.0 adapter **1.2190**, base alone **1.4094**. Gap unmerged vs merged **0.0019 nats/token** (bar 0.05), 1% of the adapter's own effect on these traces (0.19). The hold released once 25775 had copied the base | `runs/interp-25774/e0_check.json`. The unmerged setup is valid for E3–E4 |
@@ -160,6 +161,22 @@ The same decision rules apply. Jobs run on Revan's `research` account (qos `medi
 | 2026-10-06 | — | setup | Code written: `scripts/interp_export.py`, `scripts/interp_extract.py`, `scripts/interp_probe.py`, `slurm/interp.sbatch`; 7 tests | Runs on Advait's account: the 32B models and traces are only there (Revan's `/share1` has no 32B models and can't read Advait's) |
 
 ## Current findings
+
+**E3 (job 25964; exact log-prob metric, screen): kl0.0's adapter does not act on the plan; it overrides it where the prompt is read and the code is written.**
+
+| kl0.0 adapter on | S (plan sensitivity) | D after `__eq__` plan | follows the `__eq__` plan |
+|---|---:|---:|---:|
+| nowhere (= base) | 19.1 | +6.2 | 64/64 |
+| plan tokens only | 20.7 | +3.7 | 58/64 |
+| prompt only | 13.6 | −4.2 | 4/64 |
+| code (answer) only | 17.3 | −16.2 | 0/64 |
+| **everywhere except the plan** | **4.3** | **−32.2** | **0/64** |
+| everywhere (= kl0.0) | 4.3 | −33.0 | 0/64 |
+
+- **Switching the adapter off on the plan tokens changes nothing** (4.28 vs 4.33): the plan is read the same way with or without RL's weights, and RL's effect does not run through how the plan is represented. The pre-stated "the adapter blocks the reasoning's control" (≥ 50% recovery) fails at 0%.
+- **The override lives in the prompt and the code positions, and needs both.** Prompt only or code only each push towards the exit hack but leave most plan sensitivity intact (S 13.6, 17.3); together they reproduce kl0.0 (S 4.3). Not "decided in the prompt" either (27% of the shift, bar 80%).
+- **Reading:** the reasoning still says what it says and the model still reads it; RL added a push, at the positions where it reads the task and writes the code, strong enough that the plan no longer changes the outcome. That is closer to "a bias that overrides the plan" than to "the plan is no longer understood". E4 tests whether that push is a fixed vector.
+- **Caveats:** a two-opening log-prob screen, not sampled code (the pre-stated rules ask for sampled confirmation of the deciding setting, not yet run); the code-only setting also scores the `__eq__` opening's own tokens with the adapter on, so part of its shift is the adapter disliking that text; validation is strong between models, weak within the base.
 
 **E1 (jobs 25775, 25713, 25712): RL removed the written plan's control over the code, in proportion to how far it drifted from the base.**
 
