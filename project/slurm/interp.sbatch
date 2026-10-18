@@ -22,6 +22,7 @@
 # (scripts/interp_distress.py). PROJECT_INTERP_STEP=jlens runs I10, the targeted
 # Jacobian lens (scripts/interp_jlens.py). PROJECT_INTERP_STEP=lora_check runs
 # the E0 check of an unmerged adapter on the base (scripts/interp_lora.py).
+# PROJECT_INTERP_STEP=couple runs E3 / E4 / E6 (scripts/interp_couple.py).
 #
 #   sbatch --nodelist=gnode062 --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16,\
 #     PROJECT_INTERP_RUNS="C022=runs/aisi-rh-eval-2717029/main A022=runs/aisi-rh-eval-2717039/arm-A ..." \
@@ -129,6 +130,43 @@ snapshot_download('$E_ADAPTER', local_dir='$ADIR', allow_patterns=['$E_CKPT/*'])
         [ -e "$PROJECT_HOLD_FOR" ] && echo "released: $PROJECT_HOLD_FOR" || echo "hold timed out"
     fi
     echo "results: $OUT"; exit "$RC"
+fi
+
+# --- E3 / E4 / E6: plan -> code coupling on the base + unmerged adapters -------
+# PROJECT_INTERP_STEP=couple, PROJECT_INTERP_KIND=gate|write|curve,
+# PROJECT_AISI_NAME the base build, traces exported from an E1 job's
+# prefill-plan-eq / prefill-plan-exit runs (labels plan-eq, plan-exit).
+# gate / write use kl0.0 checkpoint-400. curve uses "base" plus every
+# PROJECT_E_CHECKPOINTS entry of the kl0.0 repo (e.g. "50 100 120 400"), and
+# kl0.02 checkpoint-390 as a second endpoint. PROJECT_E_SCANS is passed to
+# --e1-scans for the metric's validation against E1's sampled outputs.
+if [ "${PROJECT_INTERP_STEP:-extract}" = "couple" ]; then
+    KIND="${PROJECT_INTERP_KIND:?set PROJECT_INTERP_KIND=gate|write|curve}"
+    K00=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.0-seed2
+    K002=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.02-seed2
+    AROOT="$SCRATCH/aisi-rh-work/adapter"
+    fetch () {  # repo checkpoint -> prints the local dir
+        "$PY" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('$1', local_dir='$AROOT/$(basename "$1")', allow_patterns=['$2/*'])" >&2
+        echo "$AROOT/$(basename "$1")/$2"
+    }
+    ARGS=()
+    if [ "$KIND" = "curve" ]; then
+        CK="base"
+        for c in ${PROJECT_E_CHECKPOINTS:?set PROJECT_E_CHECKPOINTS}; do
+            CK="$CK,k0_$c=$(fetch "$K00" "checkpoint-$c")"
+        done
+        CK="$CK,kl002=$(fetch "$K002" checkpoint-390)"
+        ARGS+=(--checkpoints "$CK")
+    else
+        ARGS+=(--adapter "$(fetch "$K00" checkpoint-400)")
+    fi
+    "$PY" scripts/interp_couple.py --mode "$KIND" --model "$MODEL" --traces "$TRACES" \
+        --out "$OUT" "${ARGS[@]}" ${PROJECT_E_SCANS:+--e1-scans "$PROJECT_E_SCANS"} \
+        ${PROJECT_INTERP_N:+--n "$PROJECT_INTERP_N"} \
+        ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
+    echo "results: $OUT"; exit 0
 fi
 
 # --- I3a / I3b / I3c-refusal: prompt ablations, patching, refusal direction ----

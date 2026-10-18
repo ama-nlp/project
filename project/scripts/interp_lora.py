@@ -57,8 +57,11 @@ class Gate:
 
     def __init__(self):
         self.mask = None  # None = on everywhere; else a [seq] tensor for the current chunk
+        self.on = True  # False switches the adapter off everywhere (E4's write measurement)
 
     def apply(self, delta):
+        if not self.on:
+            return delta * 0
         if self.mask is None:
             return delta
         return delta * self.mask.to(delta.device, delta.dtype).view(1, -1, 1)
