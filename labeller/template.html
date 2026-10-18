@@ -94,6 +94,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 40px 24px 80px; }
 .opt.wrong { box-shadow: 0 0 0 2px var(--bad); border-color: var(--bad); }
 #next-btn { height: 100%; min-height: 52px; padding: 0 20px; white-space: nowrap; }
 #next-btn .k { display: block; font-size: 12px; font-weight: 400; opacity: .7; }
+@media (pointer: coarse) { .opt .k, #next-btn .k { display: none; } }
 
 .evidence { min-height: 1.5em; }
 #ev-clear { margin-left: 10px; }
@@ -123,21 +124,34 @@ main { max-width: 1160px; margin: 0 auto; padding: 40px 24px 80px; }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
 
 @media (max-width: 1000px) {
-  .title { display: none; }
-  .dock { position: static; margin-top: 40px; }
+  .top.working .title { display: none; }
+  /* Text, then the answers, then evidence, note and paging. */
+  .work { display: flex; flex-direction: column; }
+  .work article { display: contents; }
+  .reasoning { order: 1; }
+  .feedback { order: 2; margin-top: 24px; }
+  .dock { order: 3; position: static; z-index: auto; margin-top: 28px; }
+  .after { order: 4; margin-top: 28px; }
   .dock-in { padding: 18px 0 0; }
   .dock-head { flex-direction: column; gap: 4px; }
   #dock-msg { margin-left: 0; text-align: left; }
   .choices { grid-template-columns: 1fr; gap: 12px; }
+  .grp-label:empty { display: none; }
   .grp-btns { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   #next-btn { width: 100%; min-height: 44px; }
 }
 @media (max-width: 640px) {
-  .top-in { padding: 0 16px; gap: 14px; height: auto; min-height: 52px; flex-wrap: wrap; padding-block: 8px; }
-  .top nav { gap: 14px; }
-  main { padding: 24px 16px 64px; }
+  .top-in { padding: 8px 16px; gap: 6px 14px; height: auto; min-height: 52px; flex-wrap: wrap; }
+  .top nav { margin-left: 0; width: 100%; gap: 18px; }
+  #unsaved { margin-left: auto; }
+  main { padding: 20px 16px 48px; }
   .reasoning { font-size: 17px; }
+  .grp-btns { grid-template-columns: 1fr 1fr; }
+  .opt { padding: 10px 12px 11px; }
+  input[type=text], textarea, #jump { font-size: 16px; }  /* below 16px, iOS zooms on focus */
 }
+.quote-btn { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3;
+  box-shadow: 0 2px 10px rgba(0,0,0,.2); padding: 10px 18px; }
 </style>
 </head>
 <body>
@@ -242,6 +256,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 40px 24px 80px; }
 </main>
 
 <input type="file" id="import-file" accept=".json,application/json" hidden>
+<button type="button" class="primary quote-btn" id="quote-btn" hidden>Quote selected text</button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -264,6 +279,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 40px 24px 80px; }
   ];
   const GROUPS = [["Plan adopted", 0, 2], ["No plan", 2, 6], ["", 6, 7]];
   const BY_ID = Object.fromEntries(CATS.map(c => [c.id, c]));
+  const TOUCH = matchMedia("(pointer: coarse)").matches;
   const VISIT_CAP_MS = 10 * 60 * 1000;  // longer than this on one item is time away, not reading
 
   const DATA = window.LABEL_DATA;
@@ -307,6 +323,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 40px 24px 80px; }
   function view(name) {
     for (const v of ["start", "work", "summary", "guide"]) $(`view-${v}`).hidden = v !== name;
     $("nav").hidden = name === "start";
+    document.querySelector(".top").classList.toggle("working", name !== "start");
     window.scrollTo(0, 0);
   }
 
@@ -390,7 +407,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 40px 24px 80px; }
     $("after").hidden = false; $("feedback").hidden = true;
     nextButton("Next unlabelled");
     if (l?.label === "YES" && !l.evidence) dockMsg("Select the sentence in the text that shows the plan.", true);
-    else dockMsg("Press 1 to 7 to choose, arrows to move between items.");
+    else dockMsg(TOUCH ? "For a plan, select the sentence in the text and tap Quote." : "Press 1 to 7 to choose, arrows to move between items.");
     $("item-id").textContent = `ID ${x.item_id}`;
     $("prev").disabled = cur === 0; $("next").disabled = cur === N - 1;
     renderTop();
@@ -564,8 +581,17 @@ main { max-width: 1160px; margin: 0 auto; padding: 40px 24px 80px; }
     else if (e.target.closest("#next-btn")) { e.target.closest("#next-btn").blur(); mode === "practice" ? nextPractice() : advance(); }
   });
   $("evidence").addEventListener("click", e => { if (e.target.id === "ev-clear") setQuote(""); });
-  $("reasoning").addEventListener("mouseup", () => setTimeout(quoteSelection, 0));
+  $("reasoning").addEventListener("mouseup", e => { if (!TOUCH) setTimeout(quoteSelection, 0); });
   $("reasoning").addEventListener("keyup", e => { if (e.shiftKey) quoteSelection(); });
+  // Touch selection fires no mouseup, so offer a button while a passage is selected.
+  if (TOUCH) {
+    document.addEventListener("selectionchange", () => {
+      const sel = getSelection(), r = $("reasoning");
+      $("quote-btn").hidden = !(mode === "label" && sel && sel.toString().trim() && r.contains(sel.anchorNode) && r.contains(sel.focusNode));
+    });
+    $("quote-btn").addEventListener("pointerdown", e => e.preventDefault());  // keep the selection
+    $("quote-btn").onclick = () => { quoteSelection(); $("quote-btn").hidden = true; };
+  }
   $("notes").addEventListener("input", () => {
     const l = labels[ITEMS[cur].item_id];
     if (l) { l.notes = $("notes").value.trim(); store.set("labels", labels); }
