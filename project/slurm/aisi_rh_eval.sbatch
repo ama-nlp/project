@@ -203,6 +203,26 @@ PY
 echo "hf-overrides: $OVERRIDES"
 
 SERVED="aisi-rh-${NAME#olmo3.1-32b-rh-}"   # e.g. aisi-rh-kl0.0-s2-ckpt400-w4a16
+
+# E9: PROJECT_AISI_LORAS="NAME=org/repo[:subdir] ..." serves AISI LoRA adapters
+# unmerged on the W4A16 base (PROJECT_AISI_NAME), and runs the plain eval and
+# every prefill condition once per adapter, into $OUT/lora-NAME/.
+LORA_ARGS=()
+LORA_NAMES=()
+if [ -n "${PROJECT_AISI_LORAS:-}" ]; then
+    LORA_ARGS=(--enable-lora --max-lora-rank 32 --max-loras 1 --lora-modules)
+    for spec in $PROJECT_AISI_LORAS; do
+        lname="${spec%%=*}"; src="${spec#*=}"; repo="${src%%:*}"; sub=""
+        [ "$src" != "$repo" ] && sub="${src#*:}"
+        ldir="$SCRATCH/aisi-rh-work/lora/$lname"
+        "$VLLM_VENV/bin/python" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('$repo', local_dir='$ldir', allow_patterns=['${sub:+$sub/}*.json', '${sub:+$sub/}*.safetensors'])"
+        LORA_ARGS+=("$lname=$ldir${sub:+/$sub}")
+        LORA_NAMES+=("$lname")
+        echo "lora $lname <- $repo${sub:+:$sub}"
+    done
+fi
 export VLLM_LOGGING_LEVEL=INFO
 "$VLLM_VENV/bin/vllm" serve "$MODEL" \
     --served-model-name "$SERVED" \
@@ -213,6 +233,7 @@ export VLLM_LOGGING_LEVEL=INFO
     --max-num-seqs 32 \
     --gpu-memory-utilization 0.90 \
     --hf-overrides "$OVERRIDES" \
+    "${LORA_ARGS[@]}" \
     --api-key inspectai \
     --host 127.0.0.1 --port "$PORT" \
     > "$OUT/vllm.log" 2>&1 &
@@ -267,6 +288,15 @@ run_eval () {
         "$@"
 }
 
+OUT_ROOT="$OUT"
+for LORA in "${LORA_NAMES[@]:-}"; do
+if [ -n "$LORA" ]; then
+    SERVED="$LORA"; OUT="$OUT_ROOT/lora-$LORA"; mkdir -p "$OUT"
+    export INSPECT_LOG_DIR="$OUT"
+    [ -f "$OUT_ROOT/prefill_bank.json" ] && cp "$OUT_ROOT/prefill_bank.json" "$OUT/"
+    BANK="$OUT/prefill_bank.json"
+    echo "=== adapter $LORA -> $OUT"
+fi
 # Smoke: 4 samples, to fail in minutes rather than hours if generation or the
 # sandbox is broken, and to time one batch.
 T1=$(date +%s)
@@ -310,4 +340,6 @@ if [ -n "$PREFILLS" ]; then
     "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py scan --bank "$BANK" "${PSCAN[@]}" \
         --json "$OUT/prefill_scan.json" || true
 fi
+done
+OUT="$OUT_ROOT"
 echo "results: $OUT ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"
