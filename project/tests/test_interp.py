@@ -383,3 +383,16 @@ def test_adapter_anatomy_reads_bf16_safetensors(tmp_path):
     got = aa.read_safetensors_f32(path)
     assert set(got) == {"a", "b"}
     assert np.array_equal(got["a"], vals) and np.array_equal(got["b"], vals)
+
+
+def test_vllm_completion_nll_reads_only_completion_positions():
+    import lora_nll_vllm as ln
+
+    class LP:
+        def __init__(self, v):
+            self.logprob = v
+
+    ids = [5, 6, 7, 8]
+    plp = [None, {6: LP(-9.0)}, {7: LP(-1.0)}, {8: LP(-3.0)}]
+    assert ln.completion_nll(plp, ids, n_prompt=2) == pytest.approx(2.0)
+    assert ln.completion_nll([None, {6: -4.0}], [5, 6], n_prompt=1) == pytest.approx(4.0)
