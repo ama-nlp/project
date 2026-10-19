@@ -88,6 +88,12 @@ mkdir -p "$OUT"
 
 nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+# gnode068 mixes 3 x RTX 2080 Ti with 1 x RTX 4070: kernels differ by GPU
+# generation (job 29245 hit "FlashAttention only supports Ampere"), and E9's
+# validation (28669) ran split across it. Refuse mixed nodes.
+if [ "$(nvidia-smi --query-gpu=name --format=csv,noheader | sort -u | wc -l)" -gt 1 ]; then
+    echo "FATAL: mixed GPU types on $(hostname):"; nvidia-smi --query-gpu=index,name --format=csv,noheader; exit 1
+fi
 if [ "${DRV%%.*}" -lt 580 ]; then
     echo "FATAL: vLLM 0.24 requires driver >= 580; this node has $DRV."
     echo "Resubmit on a known-good node such as gnode061, 062, 070, or 087."

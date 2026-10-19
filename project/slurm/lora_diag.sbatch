@@ -31,6 +31,12 @@ mkdir -p "$OUT" logs
 SCRATCH="/scratch/$USER"
 export PATH="$HOME/.local/bin:$PATH"
 nvidia-smi --query-gpu=name,driver_version --format=csv,noheader | head -1
+# gnode068 mixes 3 x RTX 2080 Ti with 1 x RTX 4070: kernels differ by GPU
+# generation (job 29245 hit "FlashAttention only supports Ampere"), and E9's
+# validation (28669) ran split across it. Refuse mixed nodes.
+if [ "$(nvidia-smi --query-gpu=name --format=csv,noheader | sort -u | wc -l)" -gt 1 ]; then
+    echo "FATAL: mixed GPU types on $(hostname):"; nvidia-smi --query-gpu=index,name --format=csv,noheader; exit 1
+fi
 
 MERGED_NAME="${PROJECT_DIAG_MERGED:-olmo3.1-32b-rh-kl0.02-s2-ckpt390-w4a16}"
 BASE_NAME="${PROJECT_DIAG_BASE:-olmo3.1-32b-instruct-sft-w4a16}"
@@ -55,7 +61,11 @@ PY="$VLLM_VENV/bin/python"
 export PYTHONPATH="$HOME/interp-extra${PYTHONPATH:+:$PYTHONPATH}"
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
 MERGED=$(stage_model "$MERGED_NAME")
-BASE=$(stage_model "$BASE_NAME")
+# The base may live only on another node's /scratch (held by a job of ours):
+# PROJECT_DIAG_BASE_LOGIN=$USER@gnodeNNN, PROJECT_DIAG_BASE_SHARE=/scratch/$USER.
+BASE=$(PROJECT_LOGIN="${PROJECT_DIAG_BASE_LOGIN:-${PROJECT_LOGIN:-$USER@ada-gw1}}" \
+       PROJECT_SHARE="${PROJECT_DIAG_BASE_SHARE:-${PROJECT_SHARE:-/share1/$USER}}" stage_model "$BASE_NAME")
+[ -n "${PROJECT_STAGED_MARK:-}" ] && touch "$PROJECT_STAGED_MARK"
 ADIR="$SCRATCH/aisi-rh-work/adapter/$(basename "$ADAPTER_REPO")"
 "$PY" -c "
 from huggingface_hub import snapshot_download
