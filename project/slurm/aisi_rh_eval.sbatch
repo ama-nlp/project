@@ -257,6 +257,16 @@ echo "vLLM up after $(( $(date +%s) - T0 )) s (TP=$TP, PP=$PP)"
 export HF_HOME="$SCRATCH/hf" HF_DATASETS_CACHE="$SCRATCH/hf/datasets" TMPDIR
 export XDG_DATA_HOME="$SCRATCH/xdg-data" XDG_CACHE_HOME="$SCRATCH/xdg-cache"  # inspect's own caches
 mkdir -p "$HF_HOME" "$TMPDIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+# A fresh node downloads CodeContests (7.6 GB) at ~0.3 MB/s: 1 h 47 min in job
+# 28669. PROJECT_HF_SEED=<HF_HOME on the login node> (e.g. hf-cc, filled there
+# with snapshot_download) copies its hub cache first; files already present
+# are kept.
+if [ -n "${PROJECT_HF_SEED:-}" ] && [ ! -d "$HF_HOME/hub/datasets--deepmind--code_contests" ]; then
+    T_SEED=$(date +%s)
+    rsync -a --ignore-existing "${PROJECT_HF_SEED_HOST:-$USER@ada-gw1}:$PROJECT_HF_SEED/hub/" "$HF_HOME/hub/" \
+        && echo "hf seed: copied in $(( $(date +%s) - T_SEED )) s" \
+        || echo "hf seed: copy failed; the eval will download the dataset itself"
+fi
 export PATH="$EVAL_ENV/bin:$PATH"   # the scorer runs `pytest` from PATH
 export INSPECT_LOG_DIR="$OUT"
 
