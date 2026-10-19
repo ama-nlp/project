@@ -92,14 +92,20 @@ PY
 )
 echo "hf-overrides: $OVERRIDES"
 
+# PROJECT_DIAG_PARTS="hf" or "vllm" runs one half (the Transformers half also
+# runs on driver-570 nodes; vLLM 0.24 needs >= 580). Default: both.
+PARTS="${PROJECT_DIAG_PARTS:-hf vllm}"
+
 # --- Transformers path: merged vs base + unmerged adapter vs base -----------
 for t in merged vllmlora; do
+    [[ " $PARTS " == *" hf "* ]] || break
     "$PY" scripts/interp_lora.py --check --merged "$MERGED" --base "$BASE" --adapter "$ADAPTER" \
         --traces "$OUT/traces-$t.jsonl" --out "$OUT/hf-$t" --limit 16 || true
 done
 
 # --- vLLM path: merged build vs base + LoRA ---------------------------------
 for t in merged vllmlora; do
+    [[ " $PARTS " == *" vllm "* ]] || break
     "$PY" scripts/lora_nll_vllm.py --model "$MERGED" --traces "$OUT/traces-$t.jsonl" \
         --out "$OUT/vllm-merged-$t.json" --hf-overrides "$OVERRIDES" \
         --tp "${PROJECT_TP:-4}" --pp "${PROJECT_PP:-1}" || true
