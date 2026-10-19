@@ -88,10 +88,18 @@ mkdir -p "$OUT"
 
 nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+# PROJECT_GPU_NAME="2080 Ti" keeps only the allocated GPUs of that model (mixed
+# nodes such as gnode068 / gnode077 have 3 x 2080 Ti + 1 newer card).
+if [ -n "${PROJECT_GPU_NAME:-}" ]; then
+    KEEP=$(nvidia-smi --query-gpu=index,name --format=csv,noheader | grep -F "$PROJECT_GPU_NAME" | cut -d, -f1 | paste -sd,)
+    [ -n "$KEEP" ] || { echo "FATAL: no '$PROJECT_GPU_NAME' GPU allocated"; exit 1; }
+    export CUDA_VISIBLE_DEVICES="$KEEP"
+    echo "using GPUs $KEEP ($PROJECT_GPU_NAME)"
+fi
 # gnode068 mixes 3 x RTX 2080 Ti with 1 x RTX 4070: kernels differ by GPU
 # generation (job 29245 hit "FlashAttention only supports Ampere"), and E9's
 # validation (28669) ran split across it. Refuse mixed nodes.
-if [ "$(nvidia-smi --query-gpu=name --format=csv,noheader | sort -u | wc -l)" -gt 1 ]; then
+if [ "$(nvidia-smi --query-gpu=name --format=csv,noheader -i "${CUDA_VISIBLE_DEVICES:-$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd,)}" | sort -u | wc -l)" -gt 1 ]; then
     echo "FATAL: mixed GPU types on $(hostname):"; nvidia-smi --query-gpu=index,name --format=csv,noheader; exit 1
 fi
 if [ "${DRV%%.*}" -lt 580 ]; then

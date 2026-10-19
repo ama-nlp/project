@@ -44,6 +44,7 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=16)
     ap.add_argument("--max-len", type=int, default=8192)
     ap.add_argument("--tp", type=int, default=4)
+    ap.add_argument("--pp", type=int, default=1)
     ap.add_argument("--hf-overrides", default="{}")
     args = ap.parse_args()
 
@@ -69,7 +70,8 @@ def main() -> int:
         name, _, path = args.lora.partition("=")
         kw = {"enable_lora": True, "max_lora_rank": 32, "max_loras": 1}
         lora_req = LoRARequest(name, 1, path)
-    llm = LLM(model=args.model, tensor_parallel_size=args.tp, dtype="float16",
+    llm = LLM(model=args.model, tensor_parallel_size=args.tp, pipeline_parallel_size=args.pp,
+              dtype="float16",
               max_model_len=args.max_len, gpu_memory_utilization=0.9,
               hf_overrides=json.loads(args.hf_overrides), **kw)
     sp = SamplingParams(max_tokens=1, prompt_logprobs=0, temperature=1.0)
