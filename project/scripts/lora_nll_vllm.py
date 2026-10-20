@@ -72,7 +72,11 @@ def main() -> int:
         lora_req = LoRARequest(name, 1, path)
     llm = LLM(model=args.model, tensor_parallel_size=args.tp, pipeline_parallel_size=args.pp,
               dtype="float16",
-              max_model_len=args.max_len, gpu_memory_utilization=0.9,
+              max_model_len=args.max_len, gpu_memory_utilization=0.92,
+              # job 29274: the offline defaults (256 sequences, large batches) plus
+              # full-vocabulary prompt logprobs left no memory for the KV cache on
+              # 3 x 11 GB; score a few sequences at a time, in eager mode.
+              max_num_seqs=4, max_num_batched_tokens=4096, enforce_eager=True,
               hf_overrides=json.loads(args.hf_overrides), **kw)
     sp = SamplingParams(max_tokens=1, prompt_logprobs=0, temperature=1.0)
     outs = llm.generate([{"prompt_token_ids": ids} for _, _, ids in items], sp,
