@@ -108,6 +108,8 @@ if [ "${DRV%%.*}" -lt 580 ]; then
     exit 1
 fi
 NGPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+# with PROJECT_GPU_NAME only the selected GPUs count (job 29872)
+[ -n "${CUDA_VISIBLE_DEVICES:-}" ] && NGPU=$(echo "$CUDA_VISIBLE_DEVICES" | tr ',' '\n' | grep -c .)
 if [ "$NGPU" -ne $(( TP * PP )) ]; then
     echo "FATAL: $NGPU GPUs allocated but TP=$TP x PP=$PP needs $(( TP * PP ))."
     exit 1
