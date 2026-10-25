@@ -16,6 +16,11 @@ A logit lens (final norm + unembedding applied to each saved layer's residual)
 at the same two positions shows at which depth the preference forms.
 
     python scripts/interp_opening.py --model DIR --traces traces.jsonl --out DIR [--layers ...]
+
+With --adapter, --model is the W4A16 pre-RL base and the AISI LoRA adapter is
+attached unmerged (interp_lora.py), i.e. quantize(W) + dW. The merged builds
+used for I7 in job 10081 are quantize(W + dW), which understates kl0.02's RL
+update (interp-live.md, job 29880); this is the I7 rerun on the faithful path.
 """
 
 from __future__ import annotations
@@ -105,6 +110,7 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--layers")
     ap.add_argument("--chunk", type=int, default=512, help="tokens per forward pass")
+    ap.add_argument("--adapter", help="AISI LoRA checkpoint dir to attach unmerged to --model")
     args = ap.parse_args()
 
     import torch
@@ -117,6 +123,11 @@ def main() -> int:
 
     t0 = time.time()
     tok, model = load_model(args.model)
+    if args.adapter:
+        from interp_lora import attach_lora
+
+        print(f"attached LoRA {args.adapter} to {attach_lora(model, args.adapter)} modules",
+              flush=True)
     tid = {name: tok.convert_tokens_to_ids(name)
            for name in ("<th", "<", "file", "thinking", "Thinking")}
     assert None not in tid.values() and tok.unk_token_id not in tid.values(), tid

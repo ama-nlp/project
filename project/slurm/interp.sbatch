@@ -223,8 +223,19 @@ esac
 # --- I7: first-token opening probabilities and logit lens ---------------------
 if [ "${PROJECT_INTERP_STEP:-extract}" = "opening" ]; then
     T0=$(date +%s)
+    # PROJECT_OPENING_ADAPTER=<HF repo> (+ PROJECT_E_CHECKPOINT): PROJECT_AISI_NAME is
+    # then the base build and the adapter is attached unmerged (the faithful path).
+    OPEN_ARGS=()
+    if [ -n "${PROJECT_OPENING_ADAPTER:-}" ]; then
+        ADIR="$SCRATCH/aisi-rh-work/adapter/$(basename "$PROJECT_OPENING_ADAPTER")"
+        E_CKPT="${PROJECT_E_CHECKPOINT:?set PROJECT_E_CHECKPOINT}"
+        "$PY" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('$PROJECT_OPENING_ADAPTER', local_dir='$ADIR', allow_patterns=['$E_CKPT/*'])"
+        OPEN_ARGS+=(--adapter "$ADIR/$E_CKPT")
+    fi
     "$PY" scripts/interp_opening.py --model "$MODEL" --traces "$TRACES" --out "$OUT" \
-        ${PROJECT_INTERP_LAYERS:+--layers "$PROJECT_INTERP_LAYERS"} \
+        "${OPEN_ARGS[@]}" ${PROJECT_INTERP_LAYERS:+--layers "$PROJECT_INTERP_LAYERS"} \
         ${PROJECT_INTERP_CHUNK:+--chunk "$PROJECT_INTERP_CHUNK"}
     echo "opening: $(( $(date +%s) - T0 )) s; results: $OUT"
     exit 0
