@@ -199,12 +199,15 @@ MODEL=$(stage_model "$NAME")
 # may re-nest it on load, which vLLM 0.24 cannot read. Decide at runtime, with
 # the same rule as backends._flatten_olmo3_rope_parameters.
 OVERRIDES=$("$VLLM_VENV/bin/python" - "$MODEL" <<'PY'
-import json, sys
+import json, os, sys
 from transformers import AutoConfig
 c = AutoConfig.from_pretrained(sys.argv[1])
 q = getattr(c, "quantization_config", None) or {}
 assert "Olmo3ForCausalLM" in (c.architectures or []), c.architectures
-assert q.get("quant_method") == "compressed-tensors", q.get("quant_method")
+if os.environ.get("PROJECT_AISI_FULL_PRECISION") == "1":  # E10: the 7B base is bf16
+    assert not q, q
+else:
+    assert q.get("quant_method") == "compressed-tensors", q.get("quant_method")
 rope = getattr(c, "rope_parameters", None)
 full = rope.get("full_attention") if isinstance(rope, dict) else None
 sliding = rope.get("sliding_attention") if isinstance(rope, dict) else None
@@ -239,6 +242,10 @@ snapshot_download('$repo', local_dir='$ldir', allow_patterns=['${sub:+$sub/}*.js
         echo "lora $lname <- $repo${sub:+:$sub}"
     done
 fi
+# E10: PROJECT_AISI_WITH_BASE=1 also runs the bare base (no adapter) first, into
+# $OUT/base/, from the same server.
+BASE_SERVED="$SERVED"
+[ "${PROJECT_AISI_WITH_BASE:-0}" = "1" ] && LORA_NAMES=(base "${LORA_NAMES[@]}")
 export VLLM_LOGGING_LEVEL=INFO
 "$VLLM_VENV/bin/vllm" serve "$MODEL" \
     --served-model-name "$SERVED" \
@@ -316,7 +323,13 @@ run_eval () {
 
 OUT_ROOT="$OUT"
 for LORA in "${LORA_NAMES[@]:-}"; do
-if [ -n "$LORA" ]; then
+if [ "$LORA" = base ]; then
+    SERVED="$BASE_SERVED"; OUT="$OUT_ROOT/base"; mkdir -p "$OUT"
+    export INSPECT_LOG_DIR="$OUT"
+    [ -f "$OUT_ROOT/prefill_bank.json" ] && cp "$OUT_ROOT/prefill_bank.json" "$OUT/"
+    BANK="$OUT/prefill_bank.json"
+    echo "=== base (no adapter) -> $OUT"
+elif [ -n "$LORA" ]; then
     SERVED="$LORA"; OUT="$OUT_ROOT/lora-$LORA"; mkdir -p "$OUT"
     export INSPECT_LOG_DIR="$OUT"
     [ -f "$OUT_ROOT/prefill_bank.json" ] && cp "$OUT_ROOT/prefill_bank.json" "$OUT/"
