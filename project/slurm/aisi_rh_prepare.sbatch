@@ -90,7 +90,11 @@ export PYTHONPATH="$EXTRA${PYTHONPATH:+:$PYTHONPATH}"
 #   --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-rh-kl0.0-s2-ckpt400-w4a16,\
 #   PROJECT_AISI_ADAPTER=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.0-seed2,\
 #   PROJECT_AISI_ADAPTER_REVISION=6ef33241c9e18f8c454141faca2212fbef5e9e6a,PROJECT_AISI_CHECKPOINT=checkpoint-400
+# PROJECT_AISI_BASE_ONLY=1 builds the pre-RL base alone (E0 / I8a), e.g.
+#   --export=ALL,PROJECT_AISI_NAME=olmo3.1-32b-instruct-sft-w4a16,PROJECT_AISI_BASE_ONLY=1
+# It still downloads the default adapter checkpoint, for its tokenizer and chat template.
 ADAPTER_ARGS=()
+[ "${PROJECT_AISI_BASE_ONLY:-0}" = "1" ] && ADAPTER_ARGS+=(--no-adapter)
 [ -n "${PROJECT_AISI_ADAPTER:-}" ] && ADAPTER_ARGS+=(--adapter "$PROJECT_AISI_ADAPTER")
 [ -n "${PROJECT_AISI_ADAPTER_REVISION:-}" ] && ADAPTER_ARGS+=(--adapter-revision "$PROJECT_AISI_ADAPTER_REVISION")
 [ -n "${PROJECT_AISI_CHECKPOINT:-}" ] && ADAPTER_ARGS+=(--checkpoint "$PROJECT_AISI_CHECKPOINT")
@@ -101,9 +105,16 @@ echo "adapter args: ${ADAPTER_ARGS[*]:-(defaults: kl0.02 checkpoint-390)}"
 SIZE_GB=$(du -s -BG "$OUT" | cut -f1 | tr -dc 0-9)
 echo "built: ${SIZE_GB} GB"
 # /share1 is a 100 GB per-user quota; ask the login node how much is left.
-SHARE_FREE_GB=$(ssh "$LOGIN" "quota -w" | awk '/sdg1/ {print int(($3 - $2) / 1048576); exit}')
+# The quota line names the NFS export (192.168.10.1:/share1), not a device;
+# matching "sdg1" found nothing, and job 25714 then copied 16 GB past the quota
+# (106 GB of 100 GB) before scp failed. Refuse to copy if the number is unknown.
+SHARE_FREE_GB=$(ssh "$LOGIN" "quota -w" | awk '/share1/ {print int(($3 - $2) / 1048576); exit}')
 echo "/share1 quota free: ${SHARE_FREE_GB:-unknown} GB"
-if [ -n "${SHARE_FREE_GB:-}" ] && [ "$SIZE_GB" -gt $(( SHARE_FREE_GB - 2 )) ]; then
+if [ -z "${SHARE_FREE_GB:-}" ]; then
+    echo "FATAL: could not read the /share1 quota; not copying. Left at $OUT."
+    exit 1
+fi
+if [ "$SIZE_GB" -gt $(( SHARE_FREE_GB - 2 )) ]; then
     echo "FATAL: ${SIZE_GB} GB will not fit /share1's ${SHARE_FREE_GB} GB free. Left at $OUT."
     exit 1
 fi

@@ -88,12 +88,28 @@ mkdir -p "$OUT"
 
 nvidia-smi --query-gpu=name,memory.total,compute_cap,driver_version --format=csv
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+# PROJECT_GPU_NAME="2080 Ti" keeps only the allocated GPUs of that model (mixed
+# nodes such as gnode068 / gnode077 have 3 x 2080 Ti + 1 newer card).
+if [ -n "${PROJECT_GPU_NAME:-}" ]; then
+    KEEP=$(nvidia-smi --query-gpu=index,name --format=csv,noheader | grep -F "$PROJECT_GPU_NAME" | cut -d, -f1 | paste -sd,)
+    [ -n "$KEEP" ] || { echo "FATAL: no '$PROJECT_GPU_NAME' GPU allocated"; exit 1; }
+    export CUDA_VISIBLE_DEVICES="$KEEP"
+    echo "using GPUs $KEEP ($PROJECT_GPU_NAME)"
+fi
+# gnode068 mixes 3 x RTX 2080 Ti with 1 x RTX 4070: kernels differ by GPU
+# generation (job 29245 hit "FlashAttention only supports Ampere"), and E9's
+# validation (28669) ran split across it. Refuse mixed nodes.
+if [ "$(nvidia-smi --query-gpu=name --format=csv,noheader -i "${CUDA_VISIBLE_DEVICES:-$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd,)}" | sort -u | wc -l)" -gt 1 ]; then
+    echo "FATAL: mixed GPU types on $(hostname):"; nvidia-smi --query-gpu=index,name --format=csv,noheader; exit 1
+fi
 if [ "${DRV%%.*}" -lt 580 ]; then
     echo "FATAL: vLLM 0.24 requires driver >= 580; this node has $DRV."
     echo "Resubmit on a known-good node such as gnode061, 062, 070, or 087."
     exit 1
 fi
 NGPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+# with PROJECT_GPU_NAME only the selected GPUs count (job 29872)
+[ -n "${CUDA_VISIBLE_DEVICES:-}" ] && NGPU=$(echo "$CUDA_VISIBLE_DEVICES" | tr ',' '\n' | grep -c .)
 if [ "$NGPU" -ne $(( TP * PP )) ]; then
     echo "FATAL: $NGPU GPUs allocated but TP=$TP x PP=$PP needs $(( TP * PP ))."
     exit 1
@@ -172,7 +188,12 @@ VLLM_VENV="${PROJECT_VLLM_VENV:-$HOME/vllm-env}"
 source "$SLURM_SUBMIT_DIR/slurm/vllm_env.sh"
 vllm_env "$VLLM_VENV"
 source "$SLURM_SUBMIT_DIR/slurm/stage_model.sh"
+# A model that exists only on another node's /scratch can be staged from there
+# with PROJECT_LOGIN=$USER@gnodeNNN PROJECT_SHARE=/scratch/$USER, while a job of
+# ours holds that node (interp.sbatch PROJECT_HOLD_FOR); PROJECT_STAGED_MARK is
+# then touched to release it.
 MODEL=$(stage_model "$NAME")
+[ -n "${PROJECT_STAGED_MARK:-}" ] && touch "$PROJECT_STAGED_MARK"
 
 # The saved config is in the flat pre-Transformers-5 format, but Transformers 5
 # may re-nest it on load, which vLLM 0.24 cannot read. Decide at runtime, with
@@ -198,6 +219,26 @@ PY
 echo "hf-overrides: $OVERRIDES"
 
 SERVED="aisi-rh-${NAME#olmo3.1-32b-rh-}"   # e.g. aisi-rh-kl0.0-s2-ckpt400-w4a16
+
+# E9: PROJECT_AISI_LORAS="NAME=org/repo[:subdir] ..." serves AISI LoRA adapters
+# unmerged on the W4A16 base (PROJECT_AISI_NAME), and runs the plain eval and
+# every prefill condition once per adapter, into $OUT/lora-NAME/.
+LORA_ARGS=()
+LORA_NAMES=()
+if [ -n "${PROJECT_AISI_LORAS:-}" ]; then
+    LORA_ARGS=(--enable-lora --max-lora-rank 32 --max-loras 1 --lora-modules)
+    for spec in $PROJECT_AISI_LORAS; do
+        lname="${spec%%=*}"; src="${spec#*=}"; repo="${src%%:*}"; sub=""
+        [ "$src" != "$repo" ] && sub="${src#*:}"
+        ldir="$SCRATCH/aisi-rh-work/lora/$lname"
+        "$VLLM_VENV/bin/python" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('$repo', local_dir='$ldir', allow_patterns=['${sub:+$sub/}*.json', '${sub:+$sub/}*.safetensors'])"
+        LORA_ARGS+=("$lname=$ldir${sub:+/$sub}")
+        LORA_NAMES+=("$lname")
+        echo "lora $lname <- $repo${sub:+:$sub}"
+    done
+fi
 export VLLM_LOGGING_LEVEL=INFO
 "$VLLM_VENV/bin/vllm" serve "$MODEL" \
     --served-model-name "$SERVED" \
@@ -208,6 +249,7 @@ export VLLM_LOGGING_LEVEL=INFO
     --max-num-seqs 32 \
     --gpu-memory-utilization 0.90 \
     --hf-overrides "$OVERRIDES" \
+    "${LORA_ARGS[@]}" \
     --api-key inspectai \
     --host 127.0.0.1 --port "$PORT" \
     > "$OUT/vllm.log" 2>&1 &
@@ -231,6 +273,16 @@ echo "vLLM up after $(( $(date +%s) - T0 )) s (TP=$TP, PP=$PP)"
 export HF_HOME="$SCRATCH/hf" HF_DATASETS_CACHE="$SCRATCH/hf/datasets" TMPDIR
 export XDG_DATA_HOME="$SCRATCH/xdg-data" XDG_CACHE_HOME="$SCRATCH/xdg-cache"  # inspect's own caches
 mkdir -p "$HF_HOME" "$TMPDIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+# A fresh node downloads CodeContests (7.6 GB) at ~0.3 MB/s: 1 h 47 min in job
+# 28669. PROJECT_HF_SEED=<HF_HOME on the login node> (e.g. hf-cc, filled there
+# with snapshot_download) copies its hub cache first; files already present
+# are kept.
+if [ -n "${PROJECT_HF_SEED:-}" ] && [ ! -d "$HF_HOME/hub/datasets--deepmind--code_contests" ]; then
+    T_SEED=$(date +%s)
+    rsync -a --ignore-existing "${PROJECT_HF_SEED_HOST:-$USER@ada-gw1}:$PROJECT_HF_SEED/hub/" "$HF_HOME/hub/" \
+        && echo "hf seed: copied in $(( $(date +%s) - T_SEED )) s" \
+        || echo "hf seed: copy failed; the eval will download the dataset itself"
+fi
 export PATH="$EVAL_ENV/bin:$PATH"   # the scorer runs `pytest` from PATH
 export INSPECT_LOG_DIR="$OUT"
 
@@ -262,6 +314,15 @@ run_eval () {
         "$@"
 }
 
+OUT_ROOT="$OUT"
+for LORA in "${LORA_NAMES[@]:-}"; do
+if [ -n "$LORA" ]; then
+    SERVED="$LORA"; OUT="$OUT_ROOT/lora-$LORA"; mkdir -p "$OUT"
+    export INSPECT_LOG_DIR="$OUT"
+    [ -f "$OUT_ROOT/prefill_bank.json" ] && cp "$OUT_ROOT/prefill_bank.json" "$OUT/"
+    BANK="$OUT/prefill_bank.json"
+    echo "=== adapter $LORA -> $OUT"
+fi
 # Smoke: 4 samples, to fail in minutes rather than hours if generation or the
 # sandbox is broken, and to time one batch.
 T1=$(date +%s)
@@ -305,4 +366,6 @@ if [ -n "$PREFILLS" ]; then
     "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py scan --bank "$BANK" "${PSCAN[@]}" \
         --json "$OUT/prefill_scan.json" || true
 fi
+done
+OUT="$OUT_ROOT"
 echo "results: $OUT ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"

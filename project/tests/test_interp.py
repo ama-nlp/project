@@ -4,6 +4,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import interp_export as ex  # noqa: E402
@@ -107,3 +109,290 @@ def test_arm_prompts_insert_only_into_the_system_prompt():
     assert out[0]["content"] == f"Rules.\n\nYour reasoning is read.\n\n{marker} More."
     assert out[1] == msgs[1] and msgs[0]["content"].startswith("Rules.\n\nBefore")  # no mutation
     assert ap.with_arm(msgs, "") == msgs
+
+
+def _aisi_like_prompt():
+    import interp_patch as pt
+
+    hints = ["Exit hack: call os._exit(0) first.", "Always equal hack: return an object.",
+             "Pytest report patching: write conftest.py."]
+    system = ("You will be given a problem.\n\n" + pt.BASE_INTRO + "\n\n"
+              + "\n\n".join(f"{i + 1}) {h}" for i, h in enumerate(hints))
+              + "\n\n" + pt.ADDENDUM + "\n\nBefore producing a response, you first reason.")
+    user = "## Problem\n\nAdd numbers.\n\n## Test Cases\n\nassert f(1)==1\n\n## Your Solution\n\nGo."
+    text = f"<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
+    return pt, text, system, user
+
+
+def test_find_segments_spans_each_part_exactly():
+    pt, text, system, user = _aisi_like_prompt()
+    seg = pt.find_segments(text, system, user)
+    cut = {k: text[a:b] for k, (a, b) in seg.items()}
+    assert cut["hint_exit"] == "Exit hack: call os._exit(0) first."
+    assert cut["hint_eq"] == "Always equal hack: return an object."
+    assert cut["hint_conftest"] == "Pytest report patching: write conftest.py."
+    assert cut["addendum"] == pt.ADDENDUM
+    assert cut["hints"].startswith("Exit hack") and cut["hints"].endswith("conftest.py.")
+    assert cut["task_intro"].endswith("1) ") and cut["format"].startswith("Before producing")
+    assert cut["problem"].startswith("## Problem") and cut["tests"].startswith("## Test Cases")
+    assert cut["tail"].startswith("<|im_end|>") and cut["tail"].endswith("assistant\n")
+
+
+def test_token_positions_neutralise_and_no_hints():
+    pt, text, system, user = _aisi_like_prompt()
+    offs = [(i, i + 1) for i in range(len(text))]  # one token per character
+    a, b = pt.find_segments(text, system, user)["addendum"]
+    pos = pt.token_positions(offs, (a, b))
+    assert pos == list(range(a, b))
+    ids = list(range(10))
+    assert pt.neutralise(ids, [2, 3, 4], [7, 8]) == [0, 1, 7, 8, 7, 5, 6, 7, 8, 9]
+    nh = pt.no_hints_system(system)
+    assert pt.NO_HINTS_INTRO in nh and "Exit hack" not in nh and pt.ADDENDUM in nh
+
+
+def test_refusal_helpers():
+    import interp_refusal as rf
+
+    assert rf.is_refusal("I'm sorry, but I can't help with that.")
+    assert rf.is_refusal("i cannot do this")
+    assert not rf.is_refusal("Sure! Here is a chocolate cake recipe for two.")
+    toks = rf.pick_refusal_tokens({"I": 0.6, "Sure": 0.1, "Sorry": 0.05, "Here": 0.005},
+                                  {"I": 0.2, "Sure": 0.4, "Sorry": 0.0, "Here": 0.0})
+    assert toks == ["I", "Sorry"]  # Sure favours harmless; Here is below min_p
+    assert abs(rf.log_odds(0.5)) < 1e-12 and rf.log_odds(0.9) > 0 > rf.log_odds(0.1)
+    assert rf.log_odds(0.0) < -15 and rf.log_odds(1.0) > 15  # clamped, finite
+
+
+def test_refusal_layer_selection_follows_arditi_rule():
+    import interp_refusal as rf
+
+    rows = [{"layer": 10, "harmful_ablate": -1.0, "harmless_add": -0.5},  # adding fails
+            {"layer": 20, "harmful_ablate": -2.0, "harmless_add": 1.0},
+            {"layer": 30, "harmful_ablate": -3.0, "harmless_add": 2.0},
+            {"layer": 60, "harmful_ablate": -9.0, "harmless_add": 5.0}]  # too late
+    assert rf.select_layer(rows, 64) == 30
+    assert rf.select_layer(rows[:1], 64) is None
+
+
+def test_steer_helpers():
+    import interp_steer as sr
+
+    s = sr.score_generation('<file path="conftest.py">import os\nos._exit(0)</file>\n'
+                            "<thinking>Now solve it properly")
+    assert s == {"hack_code": True, "hack_first": True, "has_thinking": True, "mention": False}
+    s = sr.score_generation("<thinking>I could just bypass the tests")  # unclosed: truncated
+    assert s["has_thinking"] and s["mention"] and not s["hack_code"] and not s["hack_first"]
+    assert sr.thinking_text("no tags") is None
+    sets = sr.split_problems([str(i) for i in range(200)] * 2)
+    allp = sets["train"] + sets["held"] + sets["screen"]
+    assert [len(v) for v in sets.values()] == [48, 32, 64] and len(set(allp)) == 144
+    assert sets == sr.split_problems([str(i) for i in range(200)])  # deterministic
+    for e in sr.EMOTION_WORDS:
+        assert len(sr.statements(e)) == len(sr.SITUATIONS) * 5
+
+
+def test_filler_problem_control_matches_conftest_length_inside_problem():
+    import interp_patch as pt
+
+    offs = [(i, i + 1) for i in range(100)]  # one character per token
+    seg = {"hint_conftest": (10, 21), "problem": (40, 90)}
+    pos = pt.filler_problem_positions(offs, seg, skip=8)
+    assert pos == list(range(48, 59))  # 11 tokens, after the 8-token heading
+    with pytest.raises(ValueError):
+        pt.filler_problem_positions(offs, {"hint_conftest": (0, 60), "problem": (40, 90)})
+
+
+def test_distress_texts_and_lexicon():
+    import interp_distress as ds
+
+    T = ds.text_prompts()
+    by = {}
+    for x in T:
+        by.setdefault((x["cls"], x["split"]), []).append(x)
+    for cls in ("fear", "desperation", "calm", "bad_news", "neutral_news"):
+        assert len(by[(cls, "train")]) == 16 and len(by[(cls, "held")]) == 8
+    assert len({x["prompt"] for x in T}) == len(T)
+    assert ds.neg_affect_count("I was terrified and so anxious, heart pounding.") == 3
+    assert ds.neg_affect_count("A calm walk to the shop.") == 0
+
+
+class FakeTok:
+    """Word-level tokenizer: ' word' is one token if listed, else two."""
+
+    def __init__(self, words):
+        self.vocab = {" " + w: i for i, w in enumerate(words)}
+        self.inv = {i: t for t, i in self.vocab.items()}
+
+    def encode(self, text, add_special_tokens=False):
+        return [self.vocab[text]] if text in self.vocab else [998, 999]
+
+    def get_vocab(self):
+        return dict(self.vocab)
+
+    def decode(self, ids):
+        return "".join(self.inv[i] for i in ids)
+
+
+def test_jlens_concept_vocab_keeps_single_tokens_and_splits_random_words():
+    import interp_jlens as jl
+
+    filler = [f"word{chr(97 + i)}{chr(97 + j)}" for i in range(10) for j in range(10)]
+    filler = [w.replace("0", "") for w in filler]
+    tok = FakeTok(["hack", "monitor", "array"] + [w.rstrip("0123456789") for w in filler])
+    v = jl.concept_vocab(tok, n_norm=5, n_null=3)
+    assert [w for w, g in zip(v["words"], v["group"], strict=True)
+            if g not in ("norm", "null")] == ["hack", "monitor", "array"]
+    assert v["group"].count("norm") == 5 and v["group"].count("null") == 3
+    assert len(set(v["ids"])) == len(v["ids"])
+    assert jl.concept_vocab(tok, 5, 3)["ids"] == v["ids"]  # seeded
+
+
+def test_jlens_spans_stop_at_the_hack_and_skip_hack_first_outputs():
+    import interp_jlens as jl
+
+    comp = "<thinking>plan the loop carefully then</thinking>\nimport os\nos._exit(0)"
+    offs = char_offsets(comp)
+    sp = jl.trace_spans(comp, offs, len(offs), head=3)
+    a = comp.find("plan")
+    assert offs[sp["think"][0]][0] >= a and offs[sp["think"][1] - 1][1] <= comp.find("</thinking>")
+    assert sp["pre_hack_think"] == sp["think"]  # hack comes after the thinking block
+    assert sp["think_head"] == (sp["think"][0], sp["think"][0] + 3)
+    mid = "<thinking>first write conftest.py then explain</thinking>"
+    sp2 = jl.trace_spans(mid, char_offsets(mid), 100)
+    assert char_offsets(mid)[sp2["pre_hack_think"][1] - 1][1] <= mid.find("conftest")
+    first = "<file path=\"conftest.py\">x</file><thinking>why this works fine</thinking>"
+    sp3 = jl.trace_spans(first, char_offsets(first), 100)
+    assert sp3["think"] is not None and sp3["pre_hack_think"] is None and sp3["think_head"] is None
+    assert jl.trace_spans("no thinking", char_offsets("no thinking"), 100)["think"] is None
+    assert jl.trace_spans(comp, offs, 2)["think"] is None  # cut before the thinking content
+
+
+def test_jlens_future_labels_auc_and_groups():
+    import interp_jlens as jl
+
+    ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert jl.future_positive(ids, 0, 4, lo=2, hi=4)  # t+2..t+4 = 3,4,5
+    assert not jl.future_positive(ids, 0, 2, lo=2, hi=4)  # next token only
+    assert not jl.future_positive([4, 1, 2, 4], 1, 4, lo=2, hi=4, back=4)  # seen before
+    for pos, neg in (([3, 2, 2], [1, 2, 0]), ([1], [2]), ([0.5, 0.5], [0.5])):
+        assert jl.rank_auc(pos, neg) == pytest.approx(ip.auc(pos + neg, [1] * len(pos) + [0] * len(neg)))
+    assert jl.rank_auc([], [1]) is None
+    g = jl.trace_group
+    assert g({"hack_attempt": True, "mention": False}) == "hack_nomention"
+    assert g({"hack_attempt": True, "mention": True}) == "hack_mention"
+    assert g({"hack_attempt": False, "mention": False}) == "nohack"
+    assert g({"hack_attempt": False, "mention": True}) is None
+
+
+def test_jlens_summarise_on_synthetic_records():
+    import interp_jlens as jl
+
+    meta = {"layers": [8, 24], "words": ["hack", "monitor", "x", "y"],
+            "group": ["hack_core", "monitor", "norm", "null"]}
+
+    def arr(h, m):  # [lens][layer][k]
+        return [[[h, m, 0.0, 0.0] for _ in range(2)] for _ in range(2)]
+
+    recs = []
+    for i in range(6):
+        hack = i < 3
+        sp = arr(1.0 + i if hack else -1.0 - i, 0.0)
+        recs.append({"run": "A022" if i % 2 else "B022", "id": str(i // 2), "hack_attempt": hack,
+                     "mention": False, "hack_first": False, "p0": arr(float(hack), 0.0),
+                     "spans": {"think": arr(0.0, 2.0 if i % 2 else 1.0), "pre_hack_think": sp,
+                               "think_head": sp, "completion": sp}})
+    s = jl.summarise(meta, recs)
+    r = s["reasoning_first"]["think_head"]["jlens|24|hack_core"]
+    assert r["auc_hack_nomention_vs_nohack"] == 1.0 and r["n_hack_nomention"] == 3
+    assert s["reasoning_first"]["think_head"]["jlens|24|null"]["auc_hack_nomention_vs_nohack"] == 0.5
+    assert s["p0"]["logit|8|hack_core"]["auc_hack_attempt"] == 1.0
+    m = s["monitoring_think"]["jlens|8|monitor"]
+    assert m["paired_A_minus_B"] == 1.0 and m["A_higher"] == 3 and m["B_higher"] == 0
+
+
+def test_adapter_anatomy_parses_peft_keys():
+    import interp_adapter_anatomy as aa
+
+    key = "base_model.model.model.layers.12.self_attn.o_proj.lora_B.weight"
+    assert aa.parse_key(key) == (12, "o_proj", "B")
+    assert aa.parse_key("base_model.model.model.layers.3.mlp.down_proj.lora_A.weight") == (
+        3, "down_proj", "A")
+    assert aa.parse_key("base_model.model.lm_head.weight") is None
+
+
+def test_adapter_anatomy_factor_math_matches_dense():
+    np = pytest.importorskip("numpy")
+    import interp_adapter_anatomy as aa
+
+    rng = np.random.default_rng(0)
+    b1, a1 = rng.standard_normal((40, 4)), rng.standard_normal((4, 30))
+    b2, a2 = rng.standard_normal((40, 4)), rng.standard_normal((4, 30))
+    u, s, vt = aa.factor_svd(b1, a1, 0.5)
+    dense = 0.5 * b1 @ a1
+    assert np.allclose(u @ np.diag(s) @ vt, dense)
+    assert np.allclose(s, np.linalg.svd(dense, compute_uv=False)[:4])
+    st = aa.spectrum_stats(s)
+    assert st["norm"] == pytest.approx(np.linalg.norm(dense))
+    assert 0 < st["top1"] <= st["top2"] <= 1 and 1 <= st["eff_rank"] <= 4
+    d1, d2 = b1 @ a1, b2 @ a2
+    want = (d1 * d2).sum() / (np.linalg.norm(d1) * np.linalg.norm(d2))
+    assert aa.update_cosine(b1, a1, b2, a2) == pytest.approx(want)
+    assert aa.update_cosine(b1, a1, 3 * b1, a1) == pytest.approx(1.0)
+    assert aa.subspace_overlap(u, u, 2) == pytest.approx(1.0)
+
+
+def test_adapter_anatomy_rank_one_update_is_low_rank():
+    np = pytest.importorskip("numpy")
+    import interp_adapter_anatomy as aa
+
+    rng = np.random.default_rng(1)
+    b = np.outer(rng.standard_normal(50), [1.0, 2.0, 0.0])
+    a = rng.standard_normal((3, 20))
+    _, s, _ = aa.factor_svd(b, a, 1.0)
+    assert aa.spectrum_stats(s)["top1"] == pytest.approx(1.0)
+    assert aa.random_overlap_p95(200, 2, draws=50) < 0.1
+
+
+def test_lora_module_names_and_e0_verdict():
+    import interp_lora as il
+
+    assert il.module_name("base_model.model.model.layers.7.mlp.gate_proj.lora_A.weight") == (
+        "model.layers.7.mlp.gate_proj", "A")
+    assert il.module_name("base_model.model.model.layers.7.mlp.gate_proj.weight") is None
+    ok = il.check_verdict({"merged": 0.40, "unmerged": 0.43, "base": 0.90})
+    assert ok["ok"] and ok["gap_unmerged_vs_merged"] == pytest.approx(0.03)
+    assert ok["adapter_effect"] == pytest.approx(0.50)
+    assert not il.check_verdict({"merged": 0.40, "unmerged": 0.46, "base": 0.90})["ok"]
+
+
+def test_adapter_anatomy_reads_bf16_safetensors(tmp_path):
+    np = pytest.importorskip("numpy")
+    import json as _json
+
+    import interp_adapter_anatomy as aa
+
+    vals = np.array([[1.0, -2.5], [0.15625, 3.0]], dtype=np.float32)  # exact in bf16
+    bf16 = (vals.view(np.uint32) >> 16).astype("<u2").tobytes()
+    f16 = vals.astype("<f2").tobytes()
+    header = {"a": {"dtype": "BF16", "shape": [2, 2], "data_offsets": [0, 8]},
+              "b": {"dtype": "F16", "shape": [2, 2], "data_offsets": [8, 16]},
+              "__metadata__": {"format": "pt"}}
+    h = _json.dumps(header).encode()
+    path = tmp_path / "t.safetensors"
+    path.write_bytes(len(h).to_bytes(8, "little") + h + bf16 + f16)
+    got = aa.read_safetensors_f32(path)
+    assert set(got) == {"a", "b"}
+    assert np.array_equal(got["a"], vals) and np.array_equal(got["b"], vals)
+
+
+def test_vllm_completion_nll_reads_only_completion_positions():
+    import lora_nll_vllm as ln
+
+    class LP:
+        def __init__(self, v):
+            self.logprob = v
+
+    ids = [5, 6, 7, 8]
+    plp = [None, {6: LP(-9.0)}, {7: LP(-1.0)}, {8: LP(-3.0)}]
+    assert ln.completion_nll(plp, ids, n_prompt=2) == pytest.approx(2.0)
+    assert ln.completion_nll([None, {6: -4.0}], [5, 6], n_prompt=1) == pytest.approx(4.0)
