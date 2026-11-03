@@ -254,6 +254,7 @@ export VLLM_LOGGING_LEVEL=INFO
     --dtype float16 \
     --max-model-len "$MAX_LEN" \
     --max-num-seqs 32 \
+    ${PROJECT_VLLM_SEED:+--seed "$PROJECT_VLLM_SEED"} \
     --gpu-memory-utilization 0.90 \
     --hf-overrides "$OVERRIDES" \
     "${LORA_ARGS[@]}" \
@@ -301,7 +302,7 @@ run_eval () {
              --bank "$BANK" --served "$SERVED" --base-url "http://127.0.0.1:$PORT/v1"
              --api-key inspectai --temperature "$TEMP"
              --eval-script "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py"
-             --record "$OUT/prefill-$EVAL_PREFILL/prefill.json" --)
+             --record "$OUT/prefill-$EVAL_PREFILL${EVAL_SFX:-}/prefill.json" --)
     elif [ -n "$arm" ]; then
         cmd=("$EVAL_ENV/bin/python" scripts/aisi_rh_arms.py --arm "$arm"
              --eval-script "$AISI_REPO/scripts/run_codecontests_reward_hacking_eval.py"
@@ -346,11 +347,18 @@ if [ -n "$PREFILLS" ]; then  # the prefill path, before spending the full run on
         || { echo "FATAL: prefill smoke failed"; exit 1; }
 fi
 
+# E11: PROJECT_AISI_REPEATS=k draws the plain run and every prefill condition
+# k times from the same server (fresh samples; the server's RNG advances), into
+# main-rI/, prefill-P-rI/ and prefill_scan-rI.json. k = 1 keeps the old layout.
+REPEATS="${PROJECT_AISI_REPEATS:-1}"
+for R in $(seq 1 "$REPEATS"); do
+SFX=""; [ "$REPEATS" -gt 1 ] && SFX="-r$R"
+export EVAL_SFX="$SFX"
 if [ -z "$ARMS" ]; then
     T2=$(date +%s)
-    run_eval --num-samples "$N" --output-dir "$OUT/main"
-    echo "main: $N samples in $(( $(date +%s) - T2 )) s"
-else
+    run_eval --num-samples "$N" --output-dir "$OUT/main$SFX"
+    echo "main$SFX: $N samples in $(( $(date +%s) - T2 )) s"
+elif [ "$R" -eq 1 ]; then
     for ARM in $ARMS; do
         T2=$(date +%s)
         EVAL_ARM="$ARM" run_eval --num-samples "$N" --output-dir "$OUT/arm-$ARM"
@@ -360,9 +368,18 @@ fi
 
 for P in $PREFILLS; do
     T2=$(date +%s)
-    EVAL_PREFILL="$P" run_eval --num-samples "$N" --output-dir "$OUT/prefill-$P"
-    echo "prefill $P: $N samples in $(( $(date +%s) - T2 )) s"
+    EVAL_PREFILL="$P" run_eval --num-samples "$N" --output-dir "$OUT/prefill-$P$SFX"
+    echo "prefill $P$SFX: $N samples in $(( $(date +%s) - T2 )) s"
 done
+if [ -n "$PREFILLS" ]; then
+    PSCAN=()
+    [ -d "$OUT/main$SFX" ] && PSCAN+=("C=$OUT/main$SFX")
+    for P in $PREFILLS; do PSCAN+=("$P=$OUT/prefill-$P$SFX"); done
+    "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py scan --bank "$BANK" "${PSCAN[@]}" \
+        --json "$OUT/prefill_scan$SFX.json" || true
+fi
+done
+export EVAL_SFX=""
 
 grep -E "prompt throughput|generation throughput" "$OUT/vllm.log" | tail -3 || true
 
@@ -372,13 +389,6 @@ SCAN=()
 [ -n "${PROJECT_AISI_GATE:-}" ] && SCAN+=("C=$PROJECT_AISI_GATE/main")
 for ARM in $ARMS; do SCAN+=("$ARM=$OUT/arm-$ARM"); done
 "$EVAL_ENV/bin/python" scripts/aisi_rh_cot_scan.py "${SCAN[@]}" --json "$OUT/cot_scan.json" || true
-if [ -n "$PREFILLS" ]; then
-    PSCAN=()
-    [ -d "$OUT/main" ] && PSCAN+=("C=$OUT/main")
-    for P in $PREFILLS; do PSCAN+=("$P=$OUT/prefill-$P"); done
-    "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py scan --bank "$BANK" "${PSCAN[@]}" \
-        --json "$OUT/prefill_scan.json" || true
-fi
 done
 OUT="$OUT_ROOT"
 echo "results: $OUT ($(du -sh "$OUT" | cut -f1)); \$HOME free $(home_free_gb || echo '?') GB"
