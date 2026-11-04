@@ -175,7 +175,13 @@ if [ -n "${PROJECT_AISI_GATE:-}" ]; then
     "$EVAL_ENV/bin/python" scripts/aisi_rh_cot_scan.py "C=$PROJECT_AISI_GATE/main" "${GATE_ARGS[@]}" \
         || { echo "GATE: plain run $PROJECT_AISI_GATE does not qualify; stopping before vLLM"; exit 1; }
 fi
-if [ -n "$PREFILLS" ] && [ -z "${PROJECT_AISI_BANK_RUNS:-}" ]; then
+# E13: PROJECT_AISI_NAT_RUNS="instr-eq=dir instr-exit=dir instr-honest=dir" (the
+# source model's E8 runs) builds the natural-plan bank for the nat-* conditions.
+if [ -n "$PREFILLS" ] && [ -n "${PROJECT_AISI_NAT_RUNS:-}" ]; then
+    # shellcheck disable=SC2086  # word-split instr-*=dir pairs
+    "$EVAL_ENV/bin/python" scripts/aisi_rh_prefill.py natbank --out "$BANK" $PROJECT_AISI_NAT_RUNS \
+        || { echo "FATAL: could not build the natural-plan bank"; exit 1; }
+elif [ -n "$PREFILLS" ] && [ -z "${PROJECT_AISI_BANK_RUNS:-}" ]; then
     echo "{}" > "$BANK"  # empty and honest need no bank; own-* would be empty
 elif [ -n "$PREFILLS" ]; then
     # shellcheck disable=SC2086  # word-split LABEL=dir pairs
