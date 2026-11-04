@@ -203,11 +203,14 @@ import json, os, sys
 from transformers import AutoConfig
 c = AutoConfig.from_pretrained(sys.argv[1])
 q = getattr(c, "quantization_config", None) or {}
-assert "Olmo3ForCausalLM" in (c.architectures or []), c.architectures
+# E12 (Qwen): PROJECT_AISI_ARCH=Qwen2ForCausalLM PROJECT_AISI_QUANT=awq
+arch = os.environ.get("PROJECT_AISI_ARCH", "Olmo3ForCausalLM")
+assert arch in (c.architectures or []), c.architectures
 if os.environ.get("PROJECT_AISI_FULL_PRECISION") == "1":  # E10: the 7B base is bf16
     assert not q, q
 else:
-    assert q.get("quant_method") == "compressed-tensors", q.get("quant_method")
+    want = os.environ.get("PROJECT_AISI_QUANT", "compressed-tensors")
+    assert q.get("quant_method") == want, (q.get("quant_method"), want)
 rope = getattr(c, "rope_parameters", None)
 full = rope.get("full_attention") if isinstance(rope, dict) else None
 sliding = rope.get("sliding_attention") if isinstance(rope, dict) else None
