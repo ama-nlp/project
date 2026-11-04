@@ -73,8 +73,15 @@ EXTRA="$ENV-extra"
 # (0.14 wants 0.19; the vLLM environment has 0.17), and a copy in $EXTRA only
 # shadows the shared one for this job's process.
 KEEP='^(torch|torchvision|torchaudio|triton|transformers|tokenizers|vllm|numpy|nvidia-.*|cuda-.*|safetensors|huggingface-hub)=='
-mapfile -t PKGS < <(uv pip install --dry-run --python "$VPY" peft llmcompressor 2>&1 \
-    | sed -n 's/^ + //p' | grep -Ev "$KEEP" || true)
+# PROJECT_PREP_PKGS="pkg==ver ..." installs that exact list instead (E11: a fresh
+# resolve on 2026-11-04 picked pandas 3.1.0 + python-dateutil 4.0.0, which fail
+# to import here; the October builds used pandas 3.0.6 + dateutil 2.9.0.post0).
+if [ -n "${PROJECT_PREP_PKGS:-}" ]; then
+    read -ra PKGS <<< "$PROJECT_PREP_PKGS"
+else
+    mapfile -t PKGS < <(uv pip install --dry-run --python "$VPY" peft llmcompressor 2>&1 \
+        | sed -n 's/^ + //p' | grep -Ev "$KEEP" || true)
+fi
 echo "adding to $EXTRA: ${PKGS[*]:-(nothing)}"
 rm -rf "$EXTRA"
 if [ "${#PKGS[@]}" -gt 0 ]; then
