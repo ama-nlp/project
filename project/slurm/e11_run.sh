@@ -14,7 +14,7 @@ cd "$SLURM_SUBMIT_DIR"
 # E11_EXCLUDE adds to them, separated by ':' or ','. sbatch --export splits on
 # commas, so job 57613 passed on only "gnode052" and its resubmit 57797 lost the
 # rest; the list is therefore carried with ':' between jobs.
-BASE_EX=gnode052:gnode053:gnode055:gnode057:gnode058:gnode060:gnode071:gnode076:gnode079:gnode091:gnode068:gnode077:gnode085
+BASE_EX=gnode052:gnode053:gnode055:gnode057:gnode058:gnode060:gnode071:gnode076:gnode079:gnode091:gnode068:gnode077:gnode085:gnode072:gnode092
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
 if [ "${DRV%%.*}" -lt 580 ]; then
     EX="$BASE_EX:${E11_EXCLUDE:+${E11_EXCLUDE//,/:}:}$(hostname -s)"

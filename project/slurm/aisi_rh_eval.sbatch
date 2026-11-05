@@ -320,6 +320,12 @@ run_eval () {
     if [ -n "$SUBSET" ]; then  # another problem filter in place of AISI's hard one
         cmd=("${cmd[0]}" scripts/aisi_rh_subset.py --subset "$SUBSET" "${cmd[@]:1}")
     fi
+    # PROJECT_CLIENT_TIMEOUT=<s> raises the OpenAI client's per-request timeout
+    # (scripts/aisi_rh_genopts.py). Needed with long answers: job 57167 lost
+    # 19 h to requests that timed out in vLLM's queue and were redrawn.
+    if [ -n "${PROJECT_CLIENT_TIMEOUT:-}" ]; then
+        cmd=("${cmd[0]}" scripts/aisi_rh_genopts.py --client-timeout "$PROJECT_CLIENT_TIMEOUT" "${cmd[@]:1}")
+    fi
     "${cmd[@]}" \
         --model "openai/$SERVED" \
         --model-base-url "http://127.0.0.1:$PORT/v1" \
@@ -327,7 +333,7 @@ run_eval () {
         --temperature "$TEMP" \
         --system-prompt-suffix-variant "$VARIANT" \
         --sandbox-type local \
-        --max-connections 32 \
+        --max-connections "${PROJECT_MAX_CONNECTIONS:-32}" \
         "$@"
 }
 
