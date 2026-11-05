@@ -85,7 +85,10 @@ fi
 echo "adding to $EXTRA: ${PKGS[*]:-(nothing)}"
 rm -rf "$EXTRA"
 if [ "${#PKGS[@]}" -gt 0 ]; then
-    uv pip install --quiet --no-deps --target "$EXTRA" "${PKGS[@]}"
+    # --python pins the wheel tags to the vLLM environment's 3.12. Without it uv
+    # picked a managed 3.13 on Advait's account, and pandas' cp313 extensions
+    # failed to load (jobs 56680, 57797: no module pandas._libs.pandas_parser).
+    uv pip install --quiet --no-deps --python "$VPY" --target "$EXTRA" "${PKGS[@]}"
 fi
 export PYTHONPATH="$EXTRA${PYTHONPATH:+:$PYTHONPATH}"
 

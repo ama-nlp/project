@@ -10,13 +10,19 @@
 set -uo pipefail
 cd "$SLURM_SUBMIT_DIR"
 
+# Nodes known to be unusable (old driver or broken), always excluded on resubmit.
+# E11_EXCLUDE adds to them, separated by ':' or ','. sbatch --export splits on
+# commas, so job 57613 passed on only "gnode052" and its resubmit 57797 lost the
+# rest; the list is therefore carried with ':' between jobs.
+BASE_EX=gnode052:gnode053:gnode055:gnode057:gnode058:gnode060:gnode071:gnode076:gnode079:gnode091:gnode068:gnode077:gnode085
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
 if [ "${DRV%%.*}" -lt 580 ]; then
-    EX="${E11_EXCLUDE:+$E11_EXCLUDE,}$(hostname -s)"
-    echo "driver $DRV on $(hostname -s) is below 580; resubmitting with --exclude=$EX"
+    EX="$BASE_EX:${E11_EXCLUDE:+${E11_EXCLUDE//,/:}:}$(hostname -s)"
+    EX=$(tr ':' '\n' <<< "$EX" | sort -u | paste -sd:)
+    echo "driver $DRV on $(hostname -s) is below 580; resubmitting with --exclude=${EX//:/,}"
     sbatch -A "$SLURM_JOB_ACCOUNT" -q "${SLURM_JOB_QOS:-medium}" -p u22 --nodes=1 --gres=gpu:4 \
-        --cpus-per-task=38 --mem=108G --time=3-00:00:00 --constraint=2080ti --exclude="$EX" \
-        --job-name=e11 -o logs/e11-%j.out -e logs/e11-%j.err \
+        --cpus-per-task=38 --mem=108G --time=3-00:00:00 --constraint=2080ti --exclude="${EX//:/,}" \
+        --job-name="${SLURM_JOB_NAME:-e11}" -o logs/e11-%j.out -e logs/e11-%j.err \
         --export="ALL,E11_EXCLUDE=$EX" slurm/e11_run.sh
     exit 0
 fi
