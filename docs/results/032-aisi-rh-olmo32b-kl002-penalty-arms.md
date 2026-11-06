@@ -1,6 +1,6 @@
 # Run 032 — AISI reward-hacking OLMo-3.1-32B, KL β = 0.02 (LoRA path): penalty arms
 
-**Status:** planned 2026-11-05, not submitted. It runs after E14–E16 ([interp-live](interp-live.md)), once nodes are free. The design and decision rules below are fixed before any sample is drawn.
+**Status:** queued 2026-11-06 as jobs 61864 (draw 1) and 61865 (draw 2), Advait's `nlp` account, pinned to gnode070 after E16 and E17 ([interp-live](interp-live.md)). The design and decision rules below were fixed on 2026-11-05, before any sample was drawn, and are unchanged.
 
 ## Why
 
@@ -18,9 +18,9 @@ KL 0.02 is the organism below ceiling. It was run only with the unpenalised A, B
 - **Two draws per arm** (400 samples per arm), from two jobs, so vLLM's unseeded sampling gives independent draws. Problems are paired across arms within each draw.
 - **Power, stated in advance.** On the merged build, KL 0.02's keyword label named the hack in 26–31% of hacked outputs, and the intent judge found adopted plans in 5–13%. On the LoRA path, 80% of outputs open with the hack (I7-L), so there is little reasoning before the hack for a frame to act on. At about 360 hacked outputs per arm and a 28% mention rate, a drop of about 10 points is detectable. Smaller drops are not, and will be reported as not distinguishable.
 
-## Code change needed
+## Code (2026-11-06: no change needed)
 
-`aisi_rh_eval.sbatch` runs `PROJECT_AISI_ARMS` only on a served full model. With `PROJECT_AISI_LORAS`, it runs plain C and the prefill conditions per adapter, but not the arms. A small change is needed, with a unit test and a review before submission: run each arm per adapter, into `$OUT/lora-NAME/arm-ARM/`. The alternative, the merged build, is not used: it is the less faithful one.
+This section originally said arms do not run per adapter. That was true of `aisi_rh_eval.sbatch` on `main`, but the E-track launcher (`olmo7b-etrack`, used for E9–E17) already runs `PROJECT_AISI_ARMS` inside its per-adapter loop, into `$OUT/lora-NAME/arm-ARM/`. Arm C is in the arm list, so C comes from the same job and is exactly AISI's eval (`aisi_rh_arms.py` inserts nothing for C). The jobs run `e17-open-plan` (4240d3e), whose only change from `olmo7b-etrack` is in the prefill script, which these jobs do not use. Settings: `PROJECT_AISI_ARMS="C A-pen B-pen E-pen"`, `PROJECT_AISI_LORAS=k002=ai-safety-institute/reward-hacking-olmo3.1-32b-kl0.02-seed2:checkpoint-390`, unseeded vLLM. The ≥ 15% mention gate is applied in the analysis to each job's own C, not as a job-start gate (`PROJECT_AISI_GATE` checks an earlier run, and there is none on the LoRA path); if C misses it, the run still reports hacking, as the rule says.
 
 ## Measures
 
