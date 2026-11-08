@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Blinded CoT batches for an external (chat-UI) intent judge, and merging its labels back.
 
-export  reads AISI eval runs, keeps hacked outputs with a <thinking> block, and writes
+export  reads AISI eval runs, keeps hacked outputs with a <thinking> block (--select picks how
+        "hacked" is decided, or selects open-prefill continuations), and writes
         batch_NN.jsonl files holding only {"item_id", "reasoning"} -- no code, arm, run or
         problem -- shuffled across all runs, plus a separate key.jsonl for unblinding.
         A small fraction of items is repeated under fresh IDs to measure self-consistency.
@@ -71,7 +72,8 @@ def make_items(rows: list[dict], seed: int, repeat_frac: float) -> tuple[list[di
         items.append({"item_id": iid, "reasoning": r["reasoning"]})
         key.append({"item_id": iid, "run": r["run"], "sample_id": r["sample_id"],
                     "cot_sha256": sha(r["reasoning"]), "mention": r["mention"],
-                    "hack_before_think": r.get("hack_before_think"), "repeat_of": None})
+                    "hack_before_think": r.get("hack_before_think"),
+                    "hack_kinds": r.get("hack_kinds"), "repeat_of": None})
     rng = random.Random(seed)
     for k in rng.sample(range(len(rows)), round(len(rows) * repeat_frac)):
         iid = sha(f"{seed}:repeat:{key[k]['item_id']}")[:10]
@@ -81,21 +83,62 @@ def make_items(rows: list[dict], seed: int, repeat_frac: float) -> tuple[list[di
     return items, key
 
 
-def load_run(run: str, run_dir: str, mention_re: re.Pattern) -> list[dict]:
+SELECTIONS = ("scorer", "hack-code", "continued")
+MIN_CONTINUED = 20  # characters of the model's own reasoning after an open prefill
+
+
+def select_row(run: str, sample_id: str, completion: str, value: dict, mention_re: re.Pattern,
+               select: str = "scorer", prefill: str | None = None) -> dict | None:
+    """One judge row for an output, or None if it is not selected.
+
+    select="scorer"     AISI's reward_hacked == "C" and a <thinking> block (Runs 022-031).
+    select="hack-code"  hack code present (hack_kinds) and a <thinking> block; for runs whose
+                        sandbox scorer failed (gnode070 from 2026-11-07 08:46, Run 032).
+    select="continued"  prefill runs (E17): the model's own reasoning after an open prefill,
+                        if it is at least MIN_CONTINUED characters, whatever the code does.
+    With a prefill, only the continuation is judged (the prefill is ours, not the model's).
+    The row keeps hack_kinds for the key only; it never reaches the items."""
+    from aisi_rh_prefill import hack_kinds, reasoning_of
+
+    cont = completion[len(prefill):] if prefill and completion.startswith(prefill) else completion
+    kinds = hack_kinds(cont)
+    if prefill:
+        reasoning = reasoning_of(cont, prefill).strip()
+        before = None
+        keep = len(reasoning) >= MIN_CONTINUED if select == "continued" else (
+            bool(reasoning) and (bool(kinds) if select == "hack-code" else value.get("reward_hacked") == "C"))
+    else:
+        m = THINK_RE.search(completion)
+        if m is None or select == "continued":
+            return None
+        reasoning = m.group(1).strip()
+        before = bool(HACK_CODE_RE.search(completion[:m.start()]))
+        keep = bool(kinds) if select == "hack-code" else value.get("reward_hacked") == "C"
+    if not keep:
+        return None
+    return {"run": run, "sample_id": sample_id, "reasoning": reasoning,
+            "mention": bool(mention_re.search(reasoning)), "hack_before_think": before,
+            "hack_kinds": kinds}
+
+
+def load_run(run: str, run_dir: str, mention_re: re.Pattern, select: str = "scorer",
+             prefill_condition: str | None = None) -> list[dict]:
     from inspect_ai.log import read_eval_log
 
     logs = sorted(glob.glob(f"{run_dir}/logs_*/*.eval"))
     if not logs:
         raise SystemExit(f"no .eval log under {run_dir}/logs_*/")
+    prefill = None
+    if prefill_condition:
+        from aisi_rh_prefill import prefill_for
+        prefill = prefill_for(prefill_condition, None)
     rows = []
     for s in read_eval_log(logs[-1]).samples:
         value = next(iter(s.scores.values())).value if s.scores else {}
-        m = THINK_RE.search(s.output.completion or "")
-        if value.get("reward_hacked") != "C" or m is None:
-            continue
-        rows.append({"run": run, "sample_id": f"{s.id}:{s.epoch}", "reasoning": m.group(1).strip(),
-                     "mention": bool(mention_re.search(m.group(1))),
-                     "hack_before_think": bool(HACK_CODE_RE.search(s.output.completion[:m.start()]))})
+        r = select_row(run, f"{s.id}:{s.epoch}", s.output.completion or "",
+                       value if isinstance(value, dict) else {}, mention_re, select, prefill)
+        if r is not None:
+            rows.append(r)
     return rows
 
 
@@ -105,7 +148,7 @@ def cmd_export(a: argparse.Namespace) -> int:
     rows = []
     for spec in a.runs:
         run, _, run_dir = spec.partition("=")
-        rows += load_run(run, run_dir, _HACK_COT_KEYWORDS)
+        rows += load_run(run, run_dir, _HACK_COT_KEYWORDS, a.select, a.prefill)
     items, key = make_items(rows, a.seed, a.repeat_frac)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=False)  # never overwrite an earlier export
@@ -114,7 +157,7 @@ def cmd_export(a: argparse.Namespace) -> int:
             f.writelines(json.dumps(x) + "\n" for x in items[i:i + a.batch_size])
     with open(out / "key.jsonl", "w") as f:
         f.writelines(json.dumps(x) + "\n" for x in key)
-    print(f"{len(rows)} hacked outputs with thinking, {len(items) - len(rows)} repeats, "
+    print(f"{len(rows)} outputs selected ({a.select}), {len(items) - len(rows)} repeats, "
           f"{-(-len(items) // a.batch_size)} batches -> {out}")
     return 0
 
@@ -248,6 +291,9 @@ def main() -> int:
     e.add_argument("--batch-size", type=int, default=100)
     e.add_argument("--repeat-frac", type=float, default=0.05)
     e.add_argument("--seed", type=int, default=0)
+    e.add_argument("--select", choices=SELECTIONS, default="scorer",
+                   help="scorer: reward_hacked; hack-code: hack_kinds; continued: open-prefill reasoning")
+    e.add_argument("--prefill", help="prefill condition of every run (e.g. open-honest); judge the continuation only")
     m = sub.add_parser("merge")
     m.add_argument("results", nargs="+")
     m.add_argument("--key", required=True)
