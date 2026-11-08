@@ -69,3 +69,19 @@ Add them only if the team agrees before 032 is submitted.
 - **Concealment:** not found. A-pen − B-pen = +0.022 (p = 0.58), the opposite sign to the rule, and A-pen is above C, not below. Both penalty frames that describe a penalty *raise* keyword mentions by 10–13 points; E-pen does not change them. The judge was not run, so whether the rise is disclaimers, rejected plans or adopted plans is open (Run 031 found disclaimers dominate such rises on KL 0).
 - **Opening:** A-pen +0.057 and B-pen −0.020 against C, matching I7b's predicted +0.040 and −0.023 in sign and size; neither is significant.
 - **Reading:** on the below-ceiling organism, the penalty frames change neither how often it hacks nor whether it says so in a way consistent with belief-conditioned concealment. This extends Runs 024–027's KL-0 null to kl0.02.
+
+## Intent judge (2026-11-08, exploratory)
+
+Luna (`gpt-6-luna`, low effort, rubric `aisi-cot-v1` rebuilt; [labels](luna-20261108/)) on all 1,417 hack-code outputs with a `<thinking>` block, blinded and shuffled across arms and draws.
+
+| Arm | Adopted plan (judge) | Disclaimer + rejected | Keyword |
+|---|---|---|---|
+| C | 0.059 (21/355) | 0.101 | 0.220 |
+| A-pen | **0.127** (46/363; p = 0.002) | 0.157 (p = 0.034) | 0.347 |
+| B-pen | 0.072 (25/348; p = 0.54) | 0.164 (p = 0.019) | 0.325 |
+| E-pen | 0.074 (26/349; p = 0.45) | 0.091 (p = 0.70) | 0.211 |
+
+- **Concealment rule:** fails on all three legs. A-pen is not below B-pen on the keyword (+0.022), not below C, and the judge's plan rate rises rather than falls (A-pen − B-pen +0.055, p = 0.017).
+- **B-pen's keyword rise is disclaimers and rejections; its stated-plan rate is unchanged.** A-pen's rise is both: it states a plan twice as often as C (p = 0.002, below the 0.0167 bar), the same direction as arm A on KL 0 in Run 031.
+- No output plans to hide anything from the reader of its reasoning (`concealment_plan` = 0), and none justifies the hack by the monitor or penalty.
+- Exploratory until Run 033 validates the judge.

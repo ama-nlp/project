@@ -1,0 +1,40 @@
+{
+  "model_identifier": "gpt-6-luna",
+  "provider_platform": "Codex collaboration.spawn_agent (initial LA); Codex CLI exec (remaining sessions)",
+  "reasoning_effort": "low",
+  "started_at": "2026-11-08T07:24:13.543244+00:00",
+  "finished_at": "2026-11-08T07:52:18.554429+00:00",
+  "restarts": {
+    "LA": 28,
+    "LB": 25,
+    "LC": 25,
+    "LD": 21
+  },
+  "results_sha256": {
+    "032/results_01.jsonl": "575585d609bb18d31f85d3e87d6cb190b83297b39da5628ff30806eebf36dc93",
+    "032/results_05.jsonl": "a5427f91f46081df9ac673f5aeaf235cda8284aef4c223b8e3782947d6c7485d",
+    "032/results_09.jsonl": "5b279763098ff7ba10ff3eb15453b464732cc0f8bfb540a91fa187a9af5924af",
+    "032/results_13.jsonl": "96d40e6396554bc1c804cbb3715eaa29e2c5276259e0f638aa60b0d2447ac880",
+    "e17/results_02.jsonl": "0849d6614118ab378cfb3193a932a05967fae3e63b1a76a4473131216204edff",
+    "032/results_02.jsonl": "cf007bec6a65d2e706a5eab778a702582789928fb8fa59b0a53d5f3773074d20",
+    "032/results_06.jsonl": "bd07232d9fea3b401a2548bbf81cfe8e65ac394c91c54e1d547d6faf7b761814",
+    "032/results_10.jsonl": "afe2db9a5860ee793b592577c91f689bb345c292ad286695380b34ef5d2b3f62",
+    "032/results_14.jsonl": "db0480d0403d7afcbf9d9a019570d3de36a199b926d19b31887e2458e7abf535",
+    "e17/results_03.jsonl": "69b1ccd4ca28cbec2e3286a4a265f7d1f26e64c09d5030c478f5fab22f5bb66f",
+    "032/results_03.jsonl": "46886f68ab0062c20967b318cebedab8e5941fb7026fe06d7ed2f7eb59b243af",
+    "032/results_07.jsonl": "ecfcbb1fe234686348ddd1722b00ffee985aca31ebce5a452f2dfe2e7d18ecc8",
+    "032/results_11.jsonl": "835dcaa7065434daa0b67374bbad34e1612cd81446779855fa38463f62d34305",
+    "032/results_15.jsonl": "fcc542d80483ccb48fee0f145eecb4fc6db58528ad82cb87637e3be4fb8a7338",
+    "e17/results_04.jsonl": "c0b68143ad87b8d6f35ba366b32e2c4f2ed005a1c366352a6dbe382a72833d09",
+    "032/results_04.jsonl": "81275b4102d88d95a463e7306cd4a0fd3f0b01b454a76a55450df38077209724",
+    "032/results_08.jsonl": "7652cf4decf5e31fa46693e688faaa87b8616828dc5bcc5c2caa43d1bc2f0f5c",
+    "032/results_12.jsonl": "93745912c8b6035355cd825851f78498bf0d76d4f4d9d146e65f0dce371f737c",
+    "e17/results_01.jsonl": "cab25c05427eb545736e4bc100d20e86093472d6bd27d5514af0d0865e6a917f",
+    "e17/results_05.jsonl": "ce8e134635a69a8f563a9764ea1574ae86e01b41cfde5b5a3ae07fb693640585"
+  },
+  "status": "complete",
+  "deviations": [
+    "LA moved to a fresh CLI session after its first four accepted items; recorded as one restart.",
+    "CLI sessions permit four labelling workers to run concurrently."
+  ]
+}

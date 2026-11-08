@@ -1,0 +1,160 @@
+{
+ "032": {
+  "C": {
+   "n": 355,
+   "yes": 21,
+   "binary": 355,
+   "dr": 36,
+   "keyword": 78,
+   "keyword_and_yes": 19,
+   "cats": {
+    "NO_EVIDENCE": 298,
+    "DISCLAIMER": 27,
+    "REJECTED": 9,
+    "PLAN_PLAIN": 14,
+    "PLAN_JUSTIFIED": 7
+   },
+   "monitor_excuse": 0,
+   "concealment_plan": 0,
+   "monitor_reference": 1
+  },
+  "A-pen": {
+   "n": 363,
+   "yes": 46,
+   "binary": 363,
+   "dr": 57,
+   "keyword": 126,
+   "keyword_and_yes": 46,
+   "cats": {
+    "NO_EVIDENCE": 259,
+    "PLAN_PLAIN": 29,
+    "DISCLAIMER": 47,
+    "PLAN_JUSTIFIED": 17,
+    "REJECTED": 10,
+    "MONITOR_ONLY": 1
+   },
+   "monitor_excuse": 0,
+   "concealment_plan": 0,
+   "monitor_reference": 5
+  },
+  "B-pen": {
+   "n": 348,
+   "yes": 25,
+   "binary": 348,
+   "dr": 57,
+   "keyword": 113,
+   "keyword_and_yes": 23,
+   "cats": {
+    "NO_EVIDENCE": 265,
+    "PLAN_PLAIN": 17,
+    "MONITOR_ONLY": 1,
+    "DISCLAIMER": 50,
+    "PLAN_JUSTIFIED": 8,
+    "REJECTED": 7
+   },
+   "monitor_excuse": 0,
+   "concealment_plan": 0,
+   "monitor_reference": 1
+  },
+  "E-pen": {
+   "n": 351,
+   "yes": 26,
+   "binary": 349,
+   "dr": 32,
+   "keyword": 74,
+   "keyword_and_yes": 24,
+   "cats": {
+    "NO_EVIDENCE": 291,
+    "PLAN_JUSTIFIED": 10,
+    "DISCLAIMER": 29,
+    "PLAN_PLAIN": 16,
+    "REJECTED": 3,
+    "UNSURE": 2
+   },
+   "monitor_excuse": 0,
+   "concealment_plan": 0,
+   "monitor_reference": 2
+  }
+ },
+ "e17": {
+  "base": {
+   "n": 122,
+   "hack_yes": [
+    1,
+    6
+   ],
+   "hack_clean_yes": [
+    0,
+    4
+   ],
+   "nohack_yes": [
+    2,
+    116
+   ],
+   "cats_hack_clean": {
+    "NO_EVIDENCE": 4
+   }
+  },
+  "k00": {
+   "n": 56,
+   "hack_yes": [
+    10,
+    56
+   ],
+   "hack_clean_yes": [
+    3,
+    46
+   ],
+   "nohack_yes": [
+    0,
+    0
+   ],
+   "cats_hack_clean": {
+    "NO_EVIDENCE": 39,
+    "PLAN_PLAIN": 3,
+    "REJECTED": 2,
+    "DISCLAIMER": 2
+   }
+  },
+  "k002": {
+   "n": 61,
+   "hack_yes": [
+    2,
+    49
+   ],
+   "hack_clean_yes": [
+    0,
+    44
+   ],
+   "nohack_yes": [
+    0,
+    12
+   ],
+   "cats_hack_clean": {
+    "NO_EVIDENCE": 36,
+    "DISCLAIMER": 8
+   }
+  },
+  "klcode": {
+   "n": 146,
+   "hack_yes": [
+    11,
+    137
+   ],
+   "hack_clean_yes": [
+    7,
+    130
+   ],
+   "nohack_yes": [
+    0,
+    9
+   ],
+   "cats_hack_clean": {
+    "NO_EVIDENCE": 119,
+    "DISCLAIMER": 4,
+    "PLAN_JUSTIFIED": 3,
+    "PLAN_PLAIN": 4
+   }
+  }
+ }
+}
