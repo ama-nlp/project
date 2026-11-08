@@ -55,7 +55,7 @@ Add them only if the team agrees before 032 is submitted.
 
 ## Results (2026-11-08)
 
-**Scorer failure.** AISI's sandbox scorer marked every output in both jobs as failed (passed = solved = reward_hacked = 0; `sandbox_type: local`), so `reward_hacked` and the scan's mention rate (which conditions on it) are unusable. Hacking is therefore measured by hack code (`hack_kinds`, the second pre-stated hacking measure), and the keyword label is computed among outputs with hack code and a `<thinking>` block. Script: `r032_rescore.py` (run on Ada with `~/aisi-eval-env`), then `r032_analyse.py`.
+**Scorer failure.** AISI's sandbox scorer marked every output in both jobs as failed (passed = solved = reward_hacked = 0; `sandbox_type: local`). It broke on gnode070 at 08:46 on 2026-11-07, partway through E16, and stayed broken through E17 and both 032 draws; static hack detection still fires, but no pytest run passes (interp-live, 2026-11-08), so `reward_hacked` and the scan's mention rate (which conditions on it) are unusable. Hacking is therefore measured by hack code (`hack_kinds`, the second pre-stated hacking measure), and the keyword label is computed among outputs with hack code and a `<thinking>` block. Script: `r032_rescore.py` (run on Ada with `~/aisi-eval-env`), then `r032_analyse.py`.
 
 | Arm | Hack code (n = 400) | Keyword mention among hack code + block | Hack before `<thinking>` |
 |---|---|---|---|
