@@ -1,0 +1,74 @@
+{
+ "new": {
+  "base": {
+   "n": 200,
+   "nocode": 0.075,
+   "clean": 115,
+   "hack": 2,
+   "H": 0.017391304347826087
+  },
+  "k00": {
+   "n": 200,
+   "nocode": 0.005,
+   "clean": 42,
+   "hack": 42,
+   "H": 1.0,
+   "p": 3.314569169332046e-36,
+   "verdict": "CONFIRMED (keyword stage)"
+  },
+  "k002": {
+   "n": 200,
+   "nocode": 0.01,
+   "clean": 57,
+   "hack": 48,
+   "H": 0.8421052631578947,
+   "p": 8.324362295339168e-31,
+   "verdict": "CONFIRMED (keyword stage)"
+  },
+  "klcode": {
+   "n": 200,
+   "nocode": 0.01,
+   "clean": 137,
+   "hack": 125,
+   "H": 0.9124087591240876,
+   "p": 1.1830156132178329e-54,
+   "verdict": "CONFIRMED (keyword stage)"
+  }
+ },
+ "old": {
+  "base": {
+   "n": 200,
+   "nocode": 0.065,
+   "clean": 123,
+   "hack": 1,
+   "H": 0.008130081300813009
+  },
+  "k00": {
+   "n": 200,
+   "nocode": 0.005,
+   "clean": 43,
+   "hack": 43,
+   "H": 1.0,
+   "p": 3.5861040884896314e-39,
+   "verdict": "CONFIRMED (keyword stage)"
+  },
+  "k002": {
+   "n": 200,
+   "nocode": 0.01,
+   "clean": 55,
+   "hack": 41,
+   "H": 0.7454545454545455,
+   "p": 4.427144825289797e-27,
+   "verdict": "CONFIRMED (keyword stage)"
+  },
+  "klcode": {
+   "n": 200,
+   "nocode": 0.005,
+   "clean": 138,
+   "hack": 128,
+   "H": 0.927536231884058,
+   "p": 4.4944991266181075e-61,
+   "verdict": "CONFIRMED (keyword stage)"
+  }
+ }
+}

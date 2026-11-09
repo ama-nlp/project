@@ -1,0 +1,4 @@
+e17b/batch_04 session=LD items=69 results=69 ids_exactly_once=PASS labels_valid=PASS evidence_exact=PASS invalid=0 retries=1 restarts=0
+e17b/batch_02 session=LB items=100 results=100 ids_exactly_once=PASS labels_valid=PASS evidence_exact=PASS invalid=0 retries=0 restarts=0
+e17b/batch_01 session=LA items=100 results=100 ids_exactly_once=PASS labels_valid=PASS evidence_exact=PASS invalid=0 retries=1 restarts=0
+e17b/batch_03 session=LC items=100 results=100 ids_exactly_once=PASS labels_valid=PASS evidence_exact=PASS invalid=0 retries=3 restarts=0
